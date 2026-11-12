@@ -70,10 +70,7 @@
             "px": 69
           },
           "content": {
-            "mod": "workspace-chrome",
-            "props": {
-              "footer": true
-            }
+            "mod": "workbench-footer"
           }
         }
       ]

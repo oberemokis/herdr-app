@@ -2500,7 +2500,8 @@ export default class Spaces extends View {
         .on_mouse_up("left", (_e, cx) => { this.pressed = null; cx.notify(); })
         .children(list))
       // On its own (no Over9k footer in this window): its help and options here.
-      .when(!collapsed && !hasMod(layout(), "over9k-footer"), (el) => el.child(h_flex().id("over9k-options-row").h(32).flex_none().mx(8).mb(6).px(8).gap(9)
+      // В workbench настройки over9k открываются из меню Settings подвала (workbench-footer).
+      .when(!collapsed && !hasMod(layout(), "over9k-footer") && !hasMod(layout(), "workbench-footer"), (el) => el.child(h_flex().id("over9k-options-row").h(32).flex_none().mx(8).mb(6).px(8).gap(9)
         .items_center().rounded(7).cursor_pointer().text_color(t.muted).border_t(1).border_color(t.border)
         .hover((s) => s.bg(t.hover).text_color(t.foreground))
         .on_click(() => openOverlay({ mod: "over9k-options", kind: "dialog", width: 740, height: 600 }))
