@@ -6,7 +6,8 @@
     "cmd-alt-2": "workbench-tabs.changes",
     "cmd-alt-3": "workbench-tabs.review",
     "cmd-alt-4": "workbench-tabs.gitlab",
-    "cmd-alt-5": "workbench-tabs.graph"
+    "cmd-alt-5": "workbench-tabs.graph",
+    "cmd-alt-,": "mod.open:over9k-options"
   },
   "mod:over9k-switcher": {
     "ctrl-tab": "over9k-switcher.next",

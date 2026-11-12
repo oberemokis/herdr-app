@@ -62,16 +62,6 @@
           "content": {
             "mod": "over9k"
           }
-        },
-        {
-          "id": "sidebar-footer",
-          "type": "block",
-          "size": {
-            "px": 69
-          },
-          "content": {
-            "mod": "workbench-footer"
-          }
         }
       ]
     },
