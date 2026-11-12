@@ -7,7 +7,8 @@ import { v_flex, h_flex, TextView } from "gpui-base";
 import { props, shared, setShared, closeOverlay, openOverlay, theme, settings } from "herdr";
 
 export const VERSION = "0.3.3";
-const CHECK = true;
+// Копия живёт в своём репозитории и обновляется руками, сверкой с автором.
+const CHECK = false;
 const REPO = "rabeeh-ta/herdr-git-graph";
 const DAY = 24 * 60 * 60 * 1000;
 export const PROMPT = `Update the git-graph mod from github.com/${REPO}`;

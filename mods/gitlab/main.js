@@ -1,6 +1,6 @@
 // GitLab for the focused repo, through glab: this branch's merge request and pipeline, open
 // merge requests, recent pipelines and issues; a merge request opens in the panel itself with
-// approve, merge, worktree, threads, comments and its file diffs. Right-click anything for
+// approve, merge, threads, comments and its file diffs. Right-click anything for
 // more, including the browser (which nothing else opens).
 // Copies of this mod: the panel; a right-click menu (props.menu, menu.js); a dialog
 // (props.dialog, dialogs.js). Lists come from one GraphQL query, polled faster while a pipeline
@@ -279,7 +279,8 @@ export default class GitLab extends View {
   stages(p, t, key) {
     const out = [];
     for (const stage of nodes(p.stages)) {
-      const jobs = nodes(stage.jobs).filter((j) => !j.retried).sort((a, b) => a.name.localeCompare(b.name));
+      // Порядок джоб как в GitLab, без пересортировки по имени.
+      const jobs = nodes(stage.jobs).filter((j) => !j.retried);
       if (!jobs.length) continue;
       out.push(div().pl(8).pt(4).h(20).flex_none().text_size(10.5).text_color(t.dim).child(stage.name));
       for (const job of jobs) out.push(this.jobRow(job, t, key));
@@ -381,17 +382,12 @@ export default class GitLab extends View {
           .children(nodes(issue.labels).slice(0, 3).map((lb) => div().flex_none().max_w(110).truncate().text_color(lb.color || t.muted).child(lb.title)))))
       .when(Boolean(target.space), (el) => el.child(svg(icon("folder")).size(12).mt(2).flex_none().text_color(t.accent)));
     if (!open) return [row];
-    const go = { id: target.space ? "goto" : "worktree-issue" };
     return [row, v_flex().ml(28).mr(6).mb(8).gap(8)
       .child(div().text_size(12.5).text_color(issue.description?.trim() ? t.foreground : t.dim)
         .child(issue.description?.trim() ? TextView.markdown(`md-issue-${issue.iid}`, issue.description).selectable(true) : "No description"))
-      .child(h_flex().gap(6)
-        .child(pill(`issue-wt-${issue.iid}`, target.space ? "Go to worktree" : "Worktree…", t, { icon: "folder",
-          tip: target.space ? "Go to the space on this issue's branch" : "Check out a branch for this issue as a new space",
-          onClick: (cx) => { const ctx = this.ctx(); if (ctx) menu.choose(go, target, ctx, cx); } }))
-        .child(pill(`issue-agent-${issue.iid}`, target.space ? "Start an agent…" : "With an agent…", t, { icon: "bot",
-          tip: "An agent with the issue as its task, in the issue's worktree",
-          onClick: (cx) => { const ctx = this.ctx(); if (ctx) menu.choose({ id: "agent-issue" }, target, ctx, cx); } })))];
+      .when(Boolean(target.space), (el) => el.child(h_flex().gap(6)
+        .child(pill(`issue-wt-${issue.iid}`, "Go to worktree", t, { icon: "folder", tip: "Go to the space on this issue's branch",
+          onClick: (cx) => { const ctx = this.ctx(); if (ctx) menu.choose({ id: "goto" }, target, ctx, cx); } }))))];
   }
 
   // ── views ──────────────────────────────────────────────────────────────────
@@ -515,11 +511,9 @@ export default class GitLab extends View {
         : pill("gl-approve", "Approve", t, { icon: "check", busy: this.busy.has("approve"), onClick: (cx) => this.act("approve", "approve", () => api.approve(ctx, mr.iid), cx) })))
       .when(open && perm.canMerge, (el) => el.child(pill("gl-merge", "Merge…", t, { icon: "merged", tone: mr.detailedMergeStatus === "MERGEABLE" ? "solid" : "plain",
         onClick: () => menu.openDialog("merge", menu.mrTarget(mr), ctx) })))
-      .child(pill("gl-worktree", there ? "Go to worktree" : "Worktree", t, { icon: "folder", busy: this.busy.has("worktree"),
-        tip: there ? `Go to the space on ${mr.sourceBranch}` : `Check out ${mr.sourceBranch} as a new space`,
-        onClick: (cx) => this.act("worktree", "open the worktree", () => api.openWorktree(ctx, menu.mrTarget(mr)), cx) }))
-      .child(pill("gl-review", "Review with agent…", t, { icon: "bot", tip: "An agent reviewing it, in its worktree",
-        onClick: () => menu.openDialog("review", menu.mrTarget(mr), ctx) }));
+      // Только переход в уже открытое пространство ветки: worktree и агентов заводит fleet.
+      .when(Boolean(there), (el) => el.child(pill("gl-worktree", "Go to worktree", t, { icon: "folder",
+        tip: `Go to the space on ${mr.sourceBranch}`, onClick: (cx) => menu.choose({ id: "goto" }, { space: there.id }, ctx, cx) })));
 
     const rows = [
       div().text_size(14).font_semibold().child(mr.title),

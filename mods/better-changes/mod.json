@@ -1,7 +1,7 @@
 {
   "$schema": "./mod.schema.json",
   "version": "2.4.0",
-  "place": "right",
+  "place": "none",
   "size": 368,
   "title": "Better Changes",
   "overlay": {

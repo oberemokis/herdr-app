@@ -3,7 +3,9 @@
 import { READ, commandsFor, gitError } from "./git.js";
 
 export async function executeAction(action, values, ctx, exec) {
-  const git = (args) => exec("git", args, { cwd: ctx.root, on: ctx.on });
+  // Граф только смотрит: менять репозиторий может лишь агент, а не клик в панели.
+  if (action.type !== "fetch") return { ok: false, message: "Read-only: only Fetch is allowed." };
+  const git =(args) => exec("git", args, { cwd: ctx.root, on: ctx.on });
   const commands = commandsFor(action, values, ctx);
   // A dialog/menu describes this snapshot, not whatever HEAD happens to be
   // when the user confirms it. Fetch does not operate on the current branch.

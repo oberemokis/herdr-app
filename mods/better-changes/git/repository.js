@@ -1,5 +1,5 @@
-// The mod's Git state: following the repository, changing the index, history,
-// commit and amend. The reads themselves are in git-reads.js.
+// The mod's Git state: following the repository, changing the index, history.
+// The reads themselves are in git-reads.js.
 import { spaces, panes, focused, exec, watchFolder, shared, setShared } from "herdr";
 import {
   readStatus,
@@ -104,15 +104,6 @@ export const gitMethods = {
     this.note = null;
     this.watched = null;
     this.resetCommits();
-    if (this.input) {
-      this.message = "";
-      this.input.set_value("");
-      this.commitMode = "commit";
-      this.commitMenuOpen = false;
-      this.amendToken++;
-      this.amendLoading = false;
-      this.amendHead = null;
-    }
   },
 
   async readRepository(cwd, on, context, cx) {
@@ -300,128 +291,7 @@ export const gitMethods = {
     });
   },
 
-  // ── Commit and amend ──────────────────────────────────────────────────────
-
-  setCommitMode(mode, cx) {
-    if (
-      !this.input ||
-      !this.root ||
-      this.busy ||
-      this.contextKey() !== this.context ||
-      (mode === "amend" && !this.hasHead)
-    )
-      return;
-    // Leaving Amend takes back the message it loaded, unless it was edited.
-    if (mode === "commit" && this.amendLoaded && this.message === this.amendLoaded) {
-      this.message = "";
-      this.input.set_value("");
-    }
-    this.amendLoaded = null;
-    this.commitMode = mode;
-    this.commitMenuOpen = false;
-    this.note = null;
-    this.amendHead = null;
-    const token = ++this.amendToken;
-    this.amendLoading = mode === "amend";
-    cx.notify();
-    if (mode !== "amend") return;
-    const { context, root, on } = this;
-    const revision = this.messageRevision;
-    cx.spawn(async (cx) => {
-      try {
-        const result = await this.git(["log", "-1", "--format=%H%x00%B"], root, on);
-        if (token !== this.amendToken || !this.isCurrent(context)) return;
-        if (result.code !== 0) throw Error((result.stderr || result.stdout).trim());
-        const separator = result.stdout.indexOf("\0");
-        const head = result.stdout.slice(0, separator);
-        if (separator < 0 || !/^[0-9a-f]{40,64}$/i.test(head))
-          throw Error("Cannot read the latest commit.");
-        this.amendHead = head;
-        // Never replace a draft, or one edited while this read was running.
-        if (!this.message.trim() && this.messageRevision === revision) {
-          this.message = result.stdout.slice(separator + 1).trimEnd();
-          this.input.set_value(this.message);
-          this.amendLoaded = this.message;
-        }
-      } catch (error) {
-        if (token === this.amendToken && this.isCurrent(context))
-          this.note = `Cannot prepare amend: ${error.message}`;
-      } finally {
-        if (token === this.amendToken) {
-          this.amendLoading = false;
-          cx.notify();
-        }
-      }
-    });
-  },
-
-  canCommit() {
-    if (
-      !this.input ||
-      !this.message.trim() ||
-      !this.root ||
-      this.busy ||
-      this.loading ||
-      this.conflicts ||
-      this.contextKey() !== this.context
-    )
-      return false;
-    // A message-only amend is valid; a new commit needs something staged.
-    return Boolean(
-      this.commitMode === "amend"
-        ? this.hasHead && this.amendHead && !this.amendLoading
-        : this.stagedCount,
-    );
-  },
-
-  // Both use the index as it is, never `-a`. A failure keeps the draft, and a
-  // success keeps anything typed while it ran.
-  commit(cx) {
-    if (!this.canCommit()) return;
-    const { root, on, context } = this;
-    const draft = this.message;
-    const amend = this.commitMode === "amend";
-    const expected = this.amendHead;
-    this.busy = true;
-    this.operation = amend ? "amend" : "commit";
-    this.commitMenuOpen = false;
-    this.note = null;
-    cx.notify();
-    cx.spawn(async (cx) => {
-      try {
-        if (amend) {
-          // Another tool may have moved HEAD since Amend was chosen.
-          const head = await this.git(["rev-parse", "--verify", "HEAD"], root, on);
-          if (head.code !== 0 || head.stdout.trim() !== expected)
-            throw Error("The latest commit changed. Choose Amend again before retrying.");
-        }
-        const result = await this.git(
-          ["commit", ...(amend ? ["--amend"] : []), "-m", draft.trim()],
-          root,
-          on,
-        );
-        if (result.code !== 0) throw Error((result.stderr || result.stdout).trim());
-        this.reload = Date.now();
-        setShared("better-changes.reload", { root, on: on ?? null, at: this.reload });
-        if (this.isCurrent(context)) {
-          if (this.message === draft) {
-            this.message = "";
-            this.input.set_value("");
-          }
-          this.commitMode = "commit";
-          this.amendHead = null;
-        }
-      } catch (error) {
-        if (this.isCurrent(context))
-          this.note = `${amend ? "Amend" : "Commit"} failed: ${error.message}`;
-      } finally {
-        this.busy = false;
-        this.operation = null;
-        this.refresh(cx);
-        cx.notify();
-      }
-    });
-  },
+  // Коммит и amend убраны: коммитит агент по маршруту задачи, панель только смотрит и индексирует.
 
   openCommit(commit, cx) {
     const context = this.context;

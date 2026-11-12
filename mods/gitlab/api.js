@@ -3,8 +3,8 @@
 // `ctx` is plain data, so popups and dialogs get it in their props:
 // { host, path, root, on, remote, web, origin, me, main }.
 
-import { exec, setShared, spaces, panes, run, home } from "herdr";
-import { firstLine, nodes, restId, slug, parseRemote } from "./util.js";
+import { exec, setShared, spaces } from "herdr";
+import { firstLine, nodes, restId, parseRemote } from "./util.js";
 
 const PIPELINE = `fragment pipeline on Pipeline {
   id iid status ref path createdAt startedAt duration
@@ -205,101 +205,10 @@ export async function draftText(ctx, branch, target) {
   return { title: commits.at(-1)?.[0] ?? branch, description: commits.map(([s]) => `- ${s}`).reverse().join("\n"), count: commits.length };
 }
 
-// ── worktrees ────────────────────────────────────────────────────────────────
-
-// Where a space is now: its first terminal's live folder, else where it was made.
-function place(s) {
-  const tabs = new Set((s.tabs ?? []).map((c) => c.id));
-  return panes().find((p) => tabs.has(p.tab) && p.cwd)?.cwd || s.folder;
-}
+// ── spaces ───────────────────────────────────────────────────────────────────
+// Worktree и агентов панель не создаёт: этим занимается fleet, панель только смотрит и ведёт MR.
 
 export const spaceOnBranch = (branch) => spaces().find((s) => s.branch === branch) ?? null;
-
-// `start` ({ argv, task }): an agent with its first message, in a new tab of the space.
-function goTo(path, on, start) {
-  const inside = (p) => Boolean(p) && (p === path || p.startsWith(`${path}/`));
-  const s = spaces().find((x) => (x.machine ?? null) === (on ?? null) && inside(place(x)));
-  if (!s) return run("space.new", { folder: path, ...(on ? { machine: on } : {}), ...(start ?? {}) });
-  run("space.select", { id: s.id });
-  if (start) run("tab.new", { space: s.id, folder: path, ...start });
-}
-
-// A branch as a space: its checkout if there is one, else a new worktree in
-// ~/.herdr/worktrees/<repo>/<branch> (where Herdr's own worktree dialog puts them).
-// No local branch: the remote's is tracked; `from.mr` fetches a fork's merge-request ref instead;
-// `from.base` starts a new branch from <remote>/<base> when the remote doesn't have it either
-// (untracked, so pull and push don't go to the base). `from.start`: an agent to start there.
-async function checkout(ctx, branch, from = {}) {
-  const git = async (args) => {
-    const r = await exec("git", args, { cwd: ctx.root, on: ctx.on });
-    return { ok: r.code === 0, out: (r.stdout ?? "").trim(), err: firstLine(r.stderr || r.stdout) };
-  };
-  const list = await git(["worktree", "list", "--porcelain"]);
-  for (const block of list.out.split(/\n\n+/)) {
-    const lines = block.split("\n");
-    const path = lines.find((l) => l.startsWith("worktree "))?.slice(9);
-    if (path && lines.includes(`branch refs/heads/${branch}`)) return goTo(path, ctx.on, from.start);
-  }
-
-  const common = await git(["rev-parse", "--path-format=absolute", "--git-common-dir"]);
-  if (!common.ok) throw new Error(common.err || "Not a git repository");
-  const main = common.out.endsWith("/.git") ? common.out.slice(0, -5) : common.out;
-  const userHome = ctx.on ? (await exec("sh", ["-c", 'printf %s "$HOME"'], { on: ctx.on })).stdout.trim() : home();
-  const path = `${userHome}/.herdr/worktrees/${main.split("/").pop()}/${slug(branch)}`;
-
-  const local = (await git(["show-ref", "--verify", "--quiet", `refs/heads/${branch}`])).ok;
-  let add;
-  if (from.mr) {
-    const f = await git(["fetch", ctx.remote, `refs/merge-requests/${from.mr}/head:refs/heads/${branch}`]);
-    if (!f.ok && !local) throw new Error(f.err || `Couldn't fetch !${from.mr}`);
-    add = ["worktree", "add", path, branch];
-  } else if (local) {
-    await git(["fetch", ctx.remote, `${branch}:${branch}`]); // fast-forward only: a diverged branch stays
-    add = ["worktree", "add", path, branch];
-  } else {
-    const f = await git(["fetch", ctx.remote, `+refs/heads/${branch}:refs/remotes/${ctx.remote}/${branch}`]);
-    if (f.ok) add = ["worktree", "add", "--track", "-b", branch, path, `${ctx.remote}/${branch}`];
-    else if (from.base) {
-      const b = await git(["fetch", ctx.remote, `+refs/heads/${from.base}:refs/remotes/${ctx.remote}/${from.base}`]);
-      if (!b.ok) throw new Error(b.err || `Couldn't fetch ${from.base}`);
-      add = ["worktree", "add", "--no-track", "-b", branch, path, `${ctx.remote}/${from.base}`];
-    } else throw new Error(f.err || `Couldn't fetch ${branch}`);
-  }
-  const r = await git(add);
-  if (!r.ok) throw new Error(r.err || "git worktree add failed");
-  // Unnamed, so the space follows the checkout and nests under its repo in the sidebar.
-  run("space.new", { folder: path, ...(ctx.on ? { machine: ctx.on } : {}), ...(from.start ?? {}) });
-}
-
-// A merge request's branch; a fork's is checked out from its merge-request ref as mr-<iid>.
-// `start`: an agent to start there (see checkout).
-export function openWorktree(ctx, mr, start) {
-  const fork = String(mr.sourceProjectId) !== String(mr.targetProjectId);
-  return fork ? checkout(ctx, `mr-${mr.iid}`, { mr: mr.iid, start }) : checkout(ctx, mr.sourceBranch, { start });
-}
-
-// What a review task says about a merge request.
-export async function mrBrief(ctx, iid) {
-  const data = await graphql(ctx, `query($path: ID!, $iid: String!) { project(fullPath: $path) { mergeRequest(iid: $iid) {
-    iid title description webUrl sourceBranch targetBranch } } }`, { path: ctx.path, iid: String(iid) });
-  const mr = data.project?.mergeRequest;
-  if (!mr) throw new Error(`No merge request !${iid}`);
-  return mr;
-}
-
-// An issue's branch: the one named, else a new one from the default branch; `start` as above.
-export const openIssueWorktree = (ctx, branch, base, start) => checkout(ctx, branch, { base, start });
-
-// A branch already made for the issue ("<iid>-…"): a local one (latest first), else the remote's.
-export async function findIssueBranch(ctx, iid) {
-  const opts = { cwd: ctx.root, on: ctx.on };
-  const local = await exec("git", ["for-each-ref", "--sort=-committerdate", "--format=%(refname:short)", `refs/heads/${iid}-*`], opts);
-  const mine = local.code === 0 ? local.stdout.split("\n").filter(Boolean)[0] : null;
-  if (mine) return mine;
-  const remote = await exec("git", ["ls-remote", "--heads", ctx.remote, `refs/heads/${iid}-*`], opts);
-  const ref = remote.code === 0 ? remote.stdout.split("\n").filter(Boolean)[0]?.split("\t")[1] : null;
-  return ref ? ref.replace(/^refs\/heads\//, "") : null;
-}
 
 // The space on an issue's branch, if one is open.
 export const spaceForIssue = (iid) => spaces().find((s) => s.branch?.startsWith(`${iid}-`)) ?? null;

@@ -1,16 +1,19 @@
 // The graph itself: Git Graph's table (graph, description, date, author,
 // commit) for the focused pane's repository, or `props.folder` when opened as
-// a pane. Labels take double-clicks (checkout) and right-clicks (menus).
+// a pane. Labels take right-clicks (menus); this copy is read-only except Fetch.
 import { div, svg, PathBuilder } from "gpui-kit";
 import { v_flex, h_flex, Scrollbar, v_virtual_list } from "gpui-base";
 import { spaces, panes, focused, layout, exec, watchFolder, readTextFile, theme, settings, props, shared, setShared, openOverlay, home, notify, knownAgents, updates } from "herdr";
 import { layoutLanes } from "./lanes.js";
 import { READ, STATUS, UNCOMMITTED, LABEL, logArgs, parseLog, parseStatus, withUncommitted, labelsOf, hitLabel,
   menuFor, menuHeight, fileArgs, joinFiles, diffArgs, diffRows } from "./git.js";
-import { perform, openDialog, showChanges } from "./act.js";
+import { perform, showChanges } from "./act.js";
 import { icon } from "./menu.js";
 import { available, check, openUpdate, newer } from "./update.js";
 import { depthOf, unsearched, findArgs, parseFound, REPO_STATUS, LATEST_TAG, FETCH, REMOTES, fetchable, parseRepoStatus, parseRemotes, webUrl, syncOf } from "./repos.js";
+
+// Базовая ветка задаёт раскладка: props блока { "base": "dev" }.
+const baseBranch = () => props()?.base ?? null;
 
 // The frame the shown tab's panes are drawn in, so the panel beside them takes the
 // same corner radius; Herdr's own pane mod walks the same one (mods/pane/main.js).
@@ -507,22 +510,9 @@ export class Graph {
     if (key === "more") return this.loadMore(cx);
     const commit = this.commits[this.index.get(key)];
     if (!commit) return;
-    if (press?.count >= 2) {
-      const hit = hitLabel(this.labels.get(key), press.x, this.graphWidth(), this.labelLimit());
-      if (hit) this.checkout(hit.part, cx);
-      return;
-    }
+    // Двойной клик по метке переключал ветку: граф только смотрит.
+    if (press?.count >= 2) return;
     this.pick(commit, cx);
-  }
-
-  checkout(part, cx) {
-    const ctx = this.ctx;
-    if (part.kind === "branch" && part.name !== ctx.current) cx.spawn(async () => { await perform({ type: "checkout", name: part.name }, {}, ctx); });
-    else if (part.kind === "remote") {
-      const branch = part.name.slice(part.name.indexOf("/") + 1);
-      if (ctx.branches.includes(branch)) { if (branch !== ctx.current) cx.spawn(async () => { await perform({ type: "checkout", name: branch }, {}, ctx); }); }
-      else openDialog({ type: "checkoutRemote", name: part.name, remote: part.name.slice(0, part.name.indexOf("/")), branch }, ctx);
-    }
   }
 
   contextMenu(key, e, cx) {
@@ -621,11 +611,15 @@ export class Graph {
 
   label(label, color, t, mono) {
     const current = label.kind === "branch" && label.head;
-    const edge = label.kind === "tag" ? t.ansi3 : label.kind === "head" ? t.accent : color;
+    // База веток задач видна сразу: от неё считается дифф ревью.
+    const first = label.parts[0]?.name ?? "", wanted = baseBranch();
+    const base = Boolean(wanted) && (label.kind === "branch" ? first === wanted
+      : label.kind === "remote" && first.slice(first.indexOf("/") + 1) === wanted);
+    const edge = base ? t.accent : label.kind === "tag" ? t.ansi3 : label.kind === "head" ? t.accent : color;
     return h_flex().flex_none().w(label.width).h(18).rounded(5).border_1().border_color(edge).overflow_hidden()
-      .when(current, (e) => e.bg(color)).when(label.kind === "head", (e) => e.bg(t.accent))
+      .when(current, (e) => e.bg(color)).when(base && !current, (e) => e.bg(t.accent + "26")).when(label.kind === "head", (e) => e.bg(t.accent))
       .children(label.parts.map((part, i) => {
-        const fg = current || part.kind === "head" ? t.background : part.kind === "tag" ? t.ansi3 : i > 0 ? t.muted : t.foreground;
+        const fg = current || part.kind === "head" ? t.background : base && i === 0 ? t.accent : part.kind === "tag" ? t.ansi3 : i > 0 ? t.muted : t.foreground;
         const glyph = part.kind === "branch" ? (part.head ? "check" : "branch") : part.kind === "tag" ? "tag" : "cloud";
         return h_flex().w(part.width).h_full().flex_none().px(LABEL.PAD).gap(3).items_center().overflow_hidden()
           .when(i > 0, (e) => e.border_l(1).border_color(edge).bg(current ? t.background + "33" : edge + "1f"))

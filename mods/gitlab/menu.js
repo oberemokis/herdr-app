@@ -12,10 +12,11 @@ const TRACE_SED = [
   String.raw`s/^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9:.]+Z [0-9a-f]{2}[OE]\+? ?//`,
   String.raw`/^(\x1b\[0K)*section_(start|end):[0-9]+:[^[:space:]]*\r?$/d`,
   String.raw`/^(\x1b\[0K)+\r?$/d`,
-].join("\n");
+  // BSD sed в macOS читает \x1b и \r буквально и молча ничего не удаляет: отдаём сами байты.
+].join("\n").replaceAll("\\x1b", "\x1b").replaceAll("\\r", "\r");
 
 // The job's log in a terminal below the focused pane; it stays until Enter.
-// Without a sed that takes -u (macOS), the log goes through raw.
+// Without a sed that takes -u (BusyBox), the log goes through raw.
 export function showLog(ctx, job) {
   const script = 'glab ci trace "$1" -R "$2" 2>&1 | { sed -uE "$4" 2>/dev/null || cat; }; printf "\\n\\033[2m— end of %s, Enter closes —\\033[0m" "$3"; read _';
   run("terminal.open", { argv: ["sh", "-c", script, "sh", restId(job.id), ctx.web, job.name, TRACE_SED], folder: ctx.root, place: "down", name: `log ${job.name}` });
@@ -38,8 +39,6 @@ export function mrItems(mr, ctx) {
     ...(open && perm.canMerge ? [item("merge", "Merge…", "merged")] : []),
     ...(open && perm.updateMergeRequest ? [mr.draft ? item("ready", "Mark as ready", "draft") : item("draft", "Mark as draft", "draft")] : []),
     SEP,
-    item("worktree", api.spaceOnBranch(mr.sourceBranch) ? "Go to worktree" : "Open worktree", "folder"),
-    item("review", "Review with an agent…", "bot"),
     item("copy-branch", "Copy branch name", "copy"),
     item("copy-link", "Copy link", "link"),
     item("open", "Open in GitLab", "external"),
@@ -76,11 +75,10 @@ export const issueTarget = (issue) => ({
   space: api.spaceForIssue(issue.iid)?.id ?? null,
 });
 
+// Worktree под задачу и агента заводит fleet; отсюда только переход в уже открытое пространство.
 export function issueItems(target) {
   return [
-    target.space ? item("goto", "Go to worktree", "folder") : item("worktree-issue", "Open worktree…", "folder"),
-    item("agent-issue", target.space ? "Start an agent on it…" : "Open worktree with an agent…", "bot"),
-    SEP,
+    ...(target.space ? [item("goto", "Go to worktree", "folder"), SEP] : []),
     ...linkItems(),
   ];
 }
@@ -112,7 +110,7 @@ export function openMenu(items, target, ctx) {
 }
 
 export function openDialog(kind, target, ctx) {
-  const [width, height] = { merge: [440, 340], close: [400, 200], create: [480, 330], worktree: [480, 330], review: [460, 250] }[kind];
+  const [width, height] = { merge: [440, 340], close: [400, 200], create: [480, 330] }[kind];
   openOverlay({ mod: MOD, kind: "dialog", width, height, props: { dialog: { kind, target, ctx } } });
 }
 
@@ -128,7 +126,6 @@ const ACTIONS = {
   ready: (ctx, t) => api.setDraft(ctx, t.iid, false),
   draft: (ctx, t) => api.setDraft(ctx, t.iid, true),
   reopen: (ctx, t) => api.setState(ctx, t.iid, "reopen"),
-  worktree: (ctx, t) => api.openWorktree(ctx, t),
   "retry-job": (ctx, t) => api.retryJob(ctx, t.id),
   "retry-pipeline": (ctx, t) => api.retryPipeline(ctx, t.id),
   "cancel-pipeline": (ctx, t) => api.cancelPipeline(ctx, t.id),
@@ -147,9 +144,7 @@ export function choose(it, target, ctx, cx) {
     case "copy-branch": copied(cx, target.branch); break;
     case "copy-path": copied(cx, target.path); break;
     case "log": showLog(ctx, target); break;
-    case "merge": case "close": case "create": case "review": openDialog(it.id, target, ctx); break;
-    case "worktree-issue": openDialog("worktree", target, ctx); break;
-    case "agent-issue": openDialog("worktree", { ...target, withAgent: true }, ctx); break;
+    case "merge": case "close": case "create": openDialog(it.id, target, ctx); break;
     case "goto": run("space.select", { id: target.space }); break;
   }
 }

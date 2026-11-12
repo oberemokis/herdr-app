@@ -23,9 +23,6 @@ import {
   MenuLabel,
   MenuDivider,
   MenuOption,
-  TextBox,
-  SplitButton,
-  SplitTrigger,
 } from "./ui.js";
 
 const VIEWS = [
@@ -205,111 +202,26 @@ export const sidebarMethods = {
     const limit = this.settings.limits.files;
     if (this.total > limit)
       list.child(Message(`Showing the first ${limit.toLocaleString()} changed files.`));
-    return v_flex().id("changes").flex_1().min_h(0).child(list).child(this.renderCommitBox());
-  },
-
-  renderCommitBox() {
+    // Поля коммита нет: коммитит агент. Ошибки stage и unstage показываются здесь.
     const t = theme();
-    const hint = this.commitBoxHint();
     return v_flex()
-      .id("commit-box")
-      .flex_none()
-      .p(10)
-      .gap(8)
-      .border_t(1)
-      .border_color(t.border)
+      .id("changes")
+      .flex_1()
+      .min_h(0)
+      .child(list)
       .when(Boolean(this.note), (el) =>
         el.child(
           div()
+            .flex_none()
+            .p(10)
+            .border_t(1)
+            .border_color(t.border)
             .text_size(TEXT.small)
             .text_color(t.ansi1)
             .whitespace_normal()
             .child(this.note ?? ""),
         ),
-      )
-      .child(
-        TextBox({
-          id: "commit-message",
-          state: this.input,
-          focused: this.typing,
-          label: "Commit message",
-        }),
-      )
-      .child(this.renderCommitButton())
-      .when(Boolean(hint), (el) =>
-        el.child(
-          div()
-            .text_size(TEXT.caption)
-            .text_color(this.commitMode === "amend" ? t.working : t.dim)
-            .whitespace_normal()
-            .child(hint ?? ""),
-        ),
       );
-  },
-
-  commitBoxHint() {
-    if (this.amendLoading) return "Loading the latest commit…";
-    if (this.conflicts) return "Resolve conflicts and stage the files before committing.";
-    if (this.commitMode === "amend") {
-      return "Amend rewrites the latest commit. Unstaged changes stay untouched.";
-    }
-    return null;
-  },
-
-  commitButtonLabel() {
-    if (this.operation === "commit") return "Committing…";
-    if (this.operation === "amend") return "Amending…";
-    return this.commitMode === "amend" ? "Amend" : "Commit";
-  },
-
-  renderCommitButton() {
-    const amend = this.commitMode === "amend";
-    return SplitButton({
-      id: "commit",
-      icon: amend ? "amend" : "commit",
-      label: this.commitButtonLabel(),
-      enabled: this.canCommit(),
-      primary: !amend,
-      onClick: (cx) => this.commit(cx),
-      menu: this.renderCommitMenu(),
-    });
-  },
-
-  renderCommitMenu() {
-    const amend = this.commitMode === "amend";
-    const choose = (mode) => (cx) => this.setCommitMode(mode, cx);
-    const options = [
-      MenuOption({
-        id: "mode-commit",
-        icon: "commit",
-        label: "Commit",
-        selected: !amend,
-        onClick: choose("commit"),
-      }),
-    ];
-    if (this.hasHead) {
-      options.push(
-        MenuOption({
-          id: "mode-amend",
-          icon: "amend",
-          label: "Amend",
-          selected: amend,
-          onClick: choose("amend"),
-        }),
-      );
-    }
-    return Menu({
-      id: "commit-menu",
-      open: this.commitMenuOpen,
-      focus: this.commitMenuFocus,
-      anchor: "bottom_right",
-      onOpenChange: (open, cx) => {
-        this.commitMenuOpen = open;
-        cx.notify();
-      },
-      trigger: SplitTrigger({ id: "commit-options", label: "Commit options" }),
-      children: options,
-    });
   },
 
   addGroup(list, scope, label, files, detail, count = files.length) {

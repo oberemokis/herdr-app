@@ -1,13 +1,12 @@
 // Better Changes: a Git sidebar, and the diff tab it opens in the centre. One
 // class plays both roles; shared("better-changes.*") connects the copies.
 // The class is built from separate files, so a method used here may live in any of:
-//   git/repository.js   following the repository, the index, history, commit and amend
+//   git/repository.js   following the repository, the index, history (no commit box here)
 //   views/sidebar.js    the tabs, options menu, file groups and commit views
 //   views/diff.js       opening a file in the centre tab, reading it, and drawing it
 //   views/pane-header.js  the header row above a pane
 // git/reads.js reads from Git, git/model.js parses its output, views/ui.js holds every look.
 import { View } from "gpui-kit";
-import { TextareaState } from "gpui-base";
 import { props, shared, setShared, nextCommand, layout, run, notify, closeOverlay } from "herdr";
 import { loadSettings, duration } from "./settings.js";
 import { followFileIcons } from "./file-icons.js";
@@ -68,7 +67,6 @@ class BetterChanges extends View {
     this.splitOffset = 0;
     this.diffToken = 0;
     this.resetCommits();
-    if (this.mode === "sidebar") this.initCommitBox(cx);
 
     cx.timer.every(CONTEXT_POLL_MS, (cx) => this.follow(cx));
     this.applySettings(cx);
@@ -90,33 +88,6 @@ class BetterChanges extends View {
       } finally {
         closeOverlay(overlay);
       }
-    });
-  }
-
-  initCommitBox(cx) {
-    this.message = "";
-    this.messageRevision = 0;
-    this.commitMode = "commit";
-    this.commitMenuOpen = false;
-    this.commitMenuFocus = cx.focus_handle();
-    this.amendToken = 0;
-    this.amendLoading = false;
-    this.amendHead = null;
-    this.typing = false;
-    // Enter makes a new line here; only the button commits.
-    this.input = TextareaState.new({ placeholder: "Commit message", rows: 4 });
-    this.input.on("change", (_e, cx) => {
-      this.message = this.input.value();
-      this.messageRevision++;
-      cx.notify();
-    });
-    this.input.on("focus", (_e, cx) => {
-      this.typing = true;
-      cx.notify();
-    });
-    this.input.on("blur", (_e, cx) => {
-      this.typing = false;
-      cx.notify();
     });
   }
 

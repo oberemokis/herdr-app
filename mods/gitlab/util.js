@@ -48,41 +48,6 @@ export function parseRemote(url) {
   return m ? { host: m[1], path: m[2] } : null;
 }
 
-// Worktree folder names, as Herdr's worktree dialog makes them.
-export const slug = (branch) => branch.replace(/[^A-Za-z0-9._-]+/g, "-").replace(/^-+|-+$/g, "");
-
-const CYRILLIC = {
-  а: "a", б: "b", в: "v", г: "g", д: "d", е: "e", ё: "e", ж: "zh", з: "z", и: "i", й: "y", к: "k", л: "l", м: "m",
-  н: "n", о: "o", п: "p", р: "r", с: "s", т: "t", у: "u", ф: "f", х: "h", ц: "ts", ч: "ch", ш: "sh", щ: "sch",
-  ъ: "", ы: "y", ь: "", э: "e", ю: "yu", я: "ya",
-};
-
-// A branch for an issue: "<iid>-<title, transliterated>", which GitLab links to the issue
-// (a merge request from it closes the issue). At most 40 characters of title, whole words.
-export function issueBranch(iid, title) {
-  const ascii = String(title ?? "").toLowerCase().replace(/[а-яё]/g, (c) => CYRILLIC[c] ?? "");
-  let words = ascii.replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
-  if (words.length > 40) words = words.slice(0, 41).replace(/-[^-]*$/, "") || words.slice(0, 40);
-  return words ? `${iid}-${words}` : `${iid}-issue`;
-}
-
-// An agent's first message for an issue: what it is, where it is, what it says.
-export function issueTask(issue) {
-  const body = String(issue.description ?? "").trim();
-  return [`GitLab issue #${issue.iid}: ${issue.title}`, issue.url, body].filter(Boolean).join("\n\n");
-}
-
-// An agent's first message for reviewing a merge request checked out in its worktree.
-export function mrTask(mr, remote) {
-  const body = String(mr.description ?? "").trim();
-  return [
-    `Review GitLab merge request !${mr.iid}: ${mr.title}`,
-    mr.webUrl,
-    `This worktree is its branch ${mr.sourceBranch}. The changes: git fetch ${remote} ${mr.targetBranch}, then git diff ${remote}/${mr.targetBranch}...HEAD.`,
-    body,
-  ].filter(Boolean).join("\n\n");
-}
-
 // A unified diff as rows numbered once, so a frame draws only the rows on screen.
 export function diffRows(text) {
   const lines = String(text ?? "").replace(/\n$/, "").split("\n").slice(0, 4000);

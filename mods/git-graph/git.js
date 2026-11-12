@@ -134,10 +134,22 @@ const currentName = (ctx) => ctx.current ?? "HEAD";
 const section = (...items) => items.filter(Boolean);
 const item = (label, icon, action) => ({ label, icon, action });
 
+// Пункты, которые не пишут в репозиторий; остальные executeAction всё равно отклонит.
+const ALLOWED = new Set(["fetch", "copy", "showChanges", "openUrl", "newTab"]);
+function readOnly(items) {
+  const out = [];
+  for (const i of items) {
+    if (i.separator) { if (out.length && !out[out.length - 1].separator) out.push(i); }
+    else if (ALLOWED.has(i.action.type)) out.push(i);
+  }
+  if (out[out.length - 1]?.separator) out.pop();
+  return out;
+}
+
 // The right-click menu for a commit, a label part or the uncommitted row:
 // Git Graph's menus, minus what needs VS Code. Sections are separated.
 export function menuFor(target, ctx) {
-  if (target.kind === "repo") return repoMenu(target, ctx);
+  if (target.kind === "repo") return readOnly(repoMenu(target, ctx));
   const cur = currentName(ctx), c = target.commit;
   let sections;
   if (target.kind === "uncommitted") {
@@ -193,7 +205,7 @@ export function menuFor(target, ctx) {
   }
   const out = [];
   for (const s of sections.filter((s) => s.length)) { if (out.length) out.push({ separator: true }); out.push(...s); }
-  return out;
+  return readOnly(out);
 }
 
 export const menuHeight = (items) => 10 + items.reduce((n, i) => n + (i.separator ? 9 : 30), 0);

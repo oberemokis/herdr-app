@@ -36,7 +36,7 @@
 //          font_size: px (default: the terminal's font size minus one),
 //          base: the branch reviews are against (default: origin/HEAD, else main, else master) }.
 import { View, div, svg } from "gpui-kit";
-import { v_flex, h_flex, InputState, Input, TextareaState, Textarea, Scrollbar, v_virtual_list, VirtualListScrollHandle, Popover } from "gpui-base";
+import { v_flex, h_flex, TextareaState, Textarea, Scrollbar, v_virtual_list, VirtualListScrollHandle, Popover } from "gpui-base";
 import { spaces, panes, focused, exec, readTextFile, watchFolder, theme, settings, nextCommand, props, shared, setShared } from "herdr";
 import { tokenize, languageOf } from "./highlight.js";
 import { ask } from "./ask.js";
@@ -139,16 +139,7 @@ export default class Changes extends View {
     this.comments = []; this.composer = null; this.handle = cx.focus_handle(); this.scroll = VirtualListScrollHandle.new();
     this.fontSize = codeSize(); this.row = rowOf(this.fontSize); this.unfolded = new Set();
     this.scope = "work"; this.sha = null; this.scopeInfo = null; this.choosingScope = false; this.range = ["HEAD"]; this.log = null;
-    this.input = InputState.new({ placeholder: "Commit message" });
-    this.input.on("change", (_e, cx) => {
-      const hadMessage = Boolean(this.message.trim());
-      this.message = this.input.value();
-      if (hadMessage !== Boolean(this.message.trim())) cx.notify();
-    });
-    this.input.on("submit", (_e, cx) => this.commit(cx));
-    this.input.on("focus", (_e, cx) => { this.typing = true; cx.notify(); });
-    this.input.on("blur", (_e, cx) => { this.typing = false; cx.notify(); });
-    this.note = TextareaState.new({ placeholder: "Leave a comment on these lines…", rows: 4 });
+    this.note =TextareaState.new({ placeholder: "Leave a comment on these lines…", rows: 4 });
     this.note.set_auto_grow(4, 14);
     // Enter adds; shift-enter is the textarea's own newline, so its submit is ignored.
     this.note.on("submit", (e, cx) => { if (!e?.shift) this.addComment(cx); });
@@ -190,7 +181,7 @@ export default class Changes extends View {
     this.tried = request?.id ?? this.tried;
     if (context !== this.context) {
       this.context = context; this.root = null; this.log = null; this.files = []; this.open = null; this.comments = []; this.composer = null;
-      this.setLines([]); this.message = ""; this.input.set_value(""); this.error = null; this.note_ = null; this.watched = null; this.closed = false; this.limited = false;
+      this.setLines([]); this.error = null; this.note_ = null; this.watched = null; this.closed = false; this.limited = false;
     }
     if (!cwd) return;
     this.loading = true;
@@ -328,7 +319,8 @@ export default class Changes extends View {
     if (!base) for (const b of ["main", "master"]) { if (await out(["rev-parse", "--verify", "-q", `refs/heads/${b}`]) !== null) { base = b; break; } }
     let merge = null;
     if (base && branch !== base) {
-      const baseRef = (await out(["rev-parse", "--verify", "-q", `refs/heads/${base}`])) !== null ? base : `origin/${base}`;
+      // Сначала origin: локальная база в основной папке отстаёт, и в дифф попали бы чужие коммиты.
+      const baseRef = (await out(["rev-parse", "--verify", "-q", `refs/remotes/origin/${base}`])) !== null ? `origin/${base}` : base;
       merge = await out(["merge-base", baseRef, "HEAD"]);
       if (merge && (await out(["rev-parse", "HEAD"])) === merge) merge = null;
     }
@@ -603,7 +595,8 @@ export default class Changes extends View {
     const rows = (indexes ? indexes.sort((a, b) => a - b).map((i) => this.rows[i]) : this.rows.filter((r) => r.gap === undefined)).filter(Boolean).slice(0, 400);
     const span = this.span(rows), title = `${this.open}${span ? `:${span.replace(/^(removed )?lines? /, "")}` : ""}`;
     const head = indexes ? `In ${this.where(this.open)}, ${span || "these lines"} of the diff (${this.scopeWords()}; new-file line numbers; - lines are removed):` : `The diff of ${this.where(this.open)} (${this.scopeWords()}):`;
-    cx.spawn(async (cx) => { try { await ask({ title, context: `${head}\n${this.quote(rows)}` }); } catch (e) { this.note_ = `Ask failed: ${e}`; } cx.notify(); });
+    const root = this.root, on = this.on;
+    cx.spawn(async (cx) => { try { await ask({ title, context: `${head}\n${this.quote(rows)}`, root, on }); } catch (e) { this.note_ = `Ask failed: ${e}`; } cx.notify(); });
   }
 
   // Every comment, with its lines, as one review message.
@@ -625,28 +618,12 @@ export default class Changes extends View {
     const n = list.length, title = `Review · ${n} comment${n > 1 ? "s" : ""}`;
     const context = `Code review of ${this.root}${this.on ? ` (on ${this.on})` : ""}: ${this.scopeWords()}. ${n} comment${n > 1 ? "s" : ""}. Line numbers are new-file numbers; "-" lines are removed.\n\n${parts.join("\n\n")}`;
     this.submitting = Date.now();
+    const root = this.root, on = this.on;
     cx.spawn(async (cx) => {
-      try { const r = await ask({ title, context, sent: SENT }); if (r === "sent") this.setComments([], cx); else if (r === "none") this.submitting = null; }
+      try { const r = await ask({ title, context, sent: SENT, root, on }); if (r === "sent") this.setComments([], cx); else if (r === "none") this.submitting = null; }
       catch (e) { this.note_ = `Submit failed: ${e}`; this.submitting = null; }
       cx.notify();
     });
-  }
-
-  commit(cx) {
-    if (!this.message.trim() || !this.root || this.busy || this.loading || this.context !== key()) return;
-    const root = this.root, on = this.on, context = this.context, message = this.message.trim();
-    this.busy = true; this.note_ = null;
-    cx.spawn(async (cx) => {
-      try {
-        for (const args of [["add", "-A"], ["commit", "-m", message]]) {
-          const r = await exec("git", args, { cwd: root, on });
-          if (r.code !== 0) throw new Error((r.stderr || r.stdout).trim());
-        }
-        if (key() === context) { this.message = ""; this.input.set_value(""); }
-      } catch (e) { if (key() === context) this.note_ = `Commit failed: ${e}`; }
-      finally { this.busy = false; this.refresh(cx); cx.notify(); }
-    });
-    cx.notify();
   }
 
   // The scope picker: a small select-looking box with the scope's name; a
@@ -760,7 +737,6 @@ export default class Changes extends View {
     const sentAt = shared(SENT);
     if (this.submitting && typeof sentAt === "number" && sentAt >= this.submitting) { this.submitting = null; cx.timer.after(1, (cx) => this.setComments([], cx)); }
     const t = theme(), colors = palette(props()?.palette, t), add = this.files.reduce((n, f) => n + f.add, 0), del = this.files.reduce((n, f) => n + f.del, 0);
-    const enabled = Boolean(this.message.trim() && this.root && !this.busy && !this.loading);
     const target = this.target(), n = this.comments.length, canAsk = Boolean(this.open && this.rows.length);
     const commented = new Set();
     for (const it of this.items) if (it.kind === "comment") for (let j = it.from; j <= it.to; j++) commented.add(j);
@@ -771,8 +747,7 @@ export default class Changes extends View {
     return v_flex().id("changes").size_full().min_h(0).relative().rounded(10).overflow_hidden().bg(t.background).border_1().border_color(t.border).text_color(t.foreground).text_size(13).track_focus(this.handle)
       .on_size_change((size, cx) => { const w = this.size?.width; this.size = size; if (w !== size.width) { this.rebuild(); cx.notify(); } })
       .on_key_down((e, cx) => {
-        if (e.key === "escape" && this.typing) { this.typing = false; this.handle.focus(); cx.stop_propagation(); cx.notify(); }
-        else if (e.key === "escape" && this.composer) { this.closeComposer(cx); cx.stop_propagation(); }
+        if (e.key === "escape" && this.composer) { this.closeComposer(cx); cx.stop_propagation(); }
         else if (e.key === "enter" && (e.modifiers?.platform || e.modifiers?.control) && this.composer) { this.addComment(cx); cx.stop_propagation(); }
       })
       .child(h_flex().h(42).flex_none().px(14).gap(8).items_center().border_b(1).border_color(t.border)
@@ -817,10 +792,8 @@ export default class Changes extends View {
         .when(Boolean(this.composer) && !this.narrow(), (e) => e.child(this.box(t, target, false))))
       // Narrow panel: the comment box is a strip under the diff instead of a column beside it.
       .when(Boolean(this.composer) && this.narrow(), (e) => e.child(this.box(t, target, true)))
-      .when(Boolean(this.note_), (e) => e.child(div().px(10).pb(8).text_size(11).text_color(t.ansi1).child(this.note_)))
-      .child(h_flex().flex_none().p(10).gap(8).border_t(1).border_color(t.border)
-        .child(div().id("commit-message").flex_1().min_w(0).h(32).px(10).flex().items_center().rounded(8).border_1().border_color(this.typing ? t.accent : t.border).cursor_text().on_mouse_down("left", (_e, cx) => cx.stop_propagation()).child(Input.new(this.input).h_full().text_size(12).text_color(t.foreground)))
-        .child(div().id("commit").h(32).px(14).flex().items_center().rounded(8).bg(enabled ? t.solid : t.raised).text_color(enabled ? t.solid_foreground : t.dim).text_size(12).when(enabled, (e) => e.cursor_pointer()).on_click((_e, cx) => this.commit(cx)).child(this.busy ? "Committing…" : "Commit")));
+      // Поля коммита нет: коммитит агент по маршруту задачи, панель только ревьюит.
+      .when(Boolean(this.note_), (e) => e.child(div().px(10).pb(8).text_size(11).text_color(t.ansi1).child(this.note_)));
   }
 
   pick(path, cx) {

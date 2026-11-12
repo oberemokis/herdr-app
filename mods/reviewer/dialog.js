@@ -5,17 +5,17 @@
 // `title` is the short label at the top; `sent` (optional) is a shared key
 // the dialog sets to the send time once the text went out, so the caller
 // can react (the panel clears its comments).
-// The note and the context go to the agent as one message with `hc send`.
-// It goes to the focused agent of the space (else an idle one, else the
-// first); a dropdown picks another. The context is read-only: it scrolls
+// The note and the context go to the agent as one message with `hc send --if`.
+// Only Claude Code agents working in the reviewed worktree are offered
+// (props.agents, from ask.js); the focused one first, else an idle one, else
+// the first; a dropdown picks another. A blocked agent gets nothing, and no
+// agent is ever started from here. The context is read-only: it scrolls
 // both ways and can be copied.
 // Enter or cmd-enter sends, Esc closes. Commands: "reviewer.send", "reviewer.close".
 import { div, svg } from "gpui-kit";
 import { v_flex, h_flex, TextareaState, Textarea, Popover } from "gpui-base";
-import { agents, focused, spaces, knownAgents, hc, run, notify, props, closeOverlay, theme, settings, nextCommand, setShared } from "herdr";
-
-// Where agents are looked up and started: the space's machine, which may not be this one.
-const where = (space) => space?.machine ? `on ${space.machine}` : "on this machine";
+import { agents, hc, run, notify, props, closeOverlay, theme, settings, nextCommand, setShared } from "herdr";
+import { repoAgents, ifFor } from "./ask.js";
 
 const DOT = { working: "working", blocked: "blocked", done: "done", idle: "idle" };
 
@@ -48,10 +48,10 @@ export class Dialog {
     if (props()?.sent) setShared(props().sent, Date.now());
   }
 
-  // The agents in this space; the picked one, else the focused, else an idle one, else the first.
+  // The worktree's Claude agents, with live status; the picked one, else the focused, else an idle one, else the first.
   candidates() {
-    const space = focused()?.space;
-    return agents().filter((a) => a.space === space);
+    const ok = props()?.agents ?? [];
+    return agents().filter((a) => ok.includes(a.address));
   }
   target() {
     const list = this.candidates();
@@ -63,39 +63,25 @@ export class Dialog {
     const text = this.text(), agent = this.target();
     if (this.sending) return;
     if (!text) { this.error = "Type a note first"; cx.notify(); return; }
-    if (!agent) { this.start(cx); return; }
-    const busy = agent.status === "working" || agent.status === "blocked";
+    if (!agent) { this.error = "No Claude Code agent works in this worktree. Nothing sent."; cx.notify(); return; }
+    // Заблокированному агенту не печатаем: текст ответил бы на его диалог разрешения.
+    const mode = ifFor(agent.status);
+    if (!mode) { this.error = `${agent.program?.name ?? agent.address} is ${agent.status}; answer it first. Nothing sent.`; this.confirm = false; cx.notify(); return; }
+    const busy = mode === "working";
     if (busy && !this.confirm) { this.confirm = true; cx.notify(); return; }
     this.sending = true; this.error = null; cx.notify();
-    const name = agent.program?.name ?? agent.app ?? agent.address;
+    const name = agent.program?.name ?? agent.app ?? agent.address, { root, on } = props() ?? {};
     cx.spawn(async (cx) => {
-      const r = await hc(["send", ...(busy ? ["--force"] : []), agent.address, text]).catch((e) => ({ code: 1, stdout: "", stderr: String(e) }));
+      // Агент мог уйти из worktree, пока открыт диалог.
+      const still = (await repoAgents(root, on).catch(() => [])).includes(agent.address);
+      const r = !still ? { code: 1, stdout: "", stderr: `${name} is no longer in ${root}` }
+        : await hc(["send", "--if", mode, agent.address, text]).catch((e) => ({ code: 1, stdout: "", stderr: String(e) }));
       this.sending = false;
       if (r.code === 0) {
         this.done(`Sent to ${name}`);
         run("pane.focus", { terminal: agent.address });
       }
       else { this.error = (r.stderr || r.stdout).trim().slice(0, 300) || "hc send failed"; this.confirm = false; cx.notify(); }
-    });
-  }
-
-  // Herdr orders known agents by use; the first installed one on the space's
-  // machine is started. The lookup can take seconds on a remote machine, and
-  // Esc or Cancel in the meantime wins: nothing is started once closed.
-  start(cx) {
-    const space = spaces().find((s) => s.id === focused()?.space), text = this.text();
-    if (!space) { this.error = "No space is shown"; cx.notify(); return; }
-    this.sending = true; this.error = null; cx.notify();
-    cx.spawn(async (cx) => {
-      try {
-        const agent = (await knownAgents({ on: space.machine })).find((a) => a.installed);
-        if (this.closed) return;
-        if (!agent) { this.error = `No agent is installed ${where(space)}. Install one first.`; return; }
-        run("tab.new", { space: space.id, argv: agent.run, task: text });
-        this.done(`Started ${agent.name} with your question`);
-      }
-      catch (e) { this.error = String(e?.message || e).trim().slice(0, 300) || "Could not start an agent"; }
-      finally { this.sending = false; cx.notify(); }
     });
   }
 
@@ -127,7 +113,7 @@ export class Dialog {
         .child(div().text_size(11).text_color(t.dim).child("Esc")))
       // Who gets it: a dropdown showing the focused agent; open it to pick another in the space.
       .child(!list.length
-        ? div().text_size(12).text_color(t.muted).child(`No agent is running in this space. Send starts the most-used installed agent ${where(spaces().find((s) => s.id === focused()?.space))} in a new tab.`)
+        ? div().text_size(12).text_color(t.muted).child("No Claude Code agent works in this worktree; nothing will be sent.")
         : h_flex().gap(8).items_center()
             .child(div().text_size(11.5).text_color(t.dim).child("To"))
             .child(list.length > 1
@@ -160,6 +146,6 @@ export class Dialog {
         .child(div().flex_1().min_w(0).truncate().text_size(11.5).text_color(this.confirm ? t.blocked : t.dim)
           .child(this.confirm && agent ? `${name(agent)} is ${agent.status}. Send anyway? The text is typed into its input now.` : agent ? `cmd-enter sends · goes to ${name(agent)} as one message` : "cmd-enter sends"))
         .child(button("ask-cancel", "Cancel", false, () => this.close()))
-        .child(button("ask-send", this.sending ? "Sending…" : this.confirm ? "Send anyway" : agent ? "Send" : "Start agent", true, (_e, cx) => this.send(cx), this.sending)));
+        .child(button("ask-send", this.sending ? "Sending…" : this.confirm ? "Send anyway" : "Send", true, (_e, cx) => this.send(cx), this.sending || !agent)));
   }
 }
