@@ -69,9 +69,6 @@ export function helpTopics(view, t) {
         .when(info.length > 0, (x) => x.child(details)).child(chipEls));
   };
   const facts = (...parts) => parts.filter(Boolean).map((p) => (typeof p === "string" ? div().child(p) : p));
-  // A session footer under an agent's prompt: its logo, then the line.
-  const footerLine = (l, parts) => h_flex().h(26).px(8).gap(6).items_center().text_size(11.5).text_color(t.muted)
-    .child(logo(l, 13)).children(parts);
   const pct = (n) => div().text_color(n >= 80 ? t.ansi1 : n >= 50 ? t.ansi3 : t.ansi2).child(`${n}%`);
   // Something an agent started: status, its kind on the line, logo, name, details.
   const sub = (kind, text, details, { last = false, spin = false, l = null, chip = null } = {}) => h_flex().h(22).pl(10).pr(8).gap(3).items_center().text_size(12)
@@ -170,10 +167,7 @@ export function helpTopics(view, t) {
         view.sample(t, view.spaceSample(t, view.opts())), [
           line(icon("mods/over9k/github.svg", 13), "Opens GitHub"),
           line(div().text_color(t.ansi3).child("4"), "Uncommitted files. Opens Changes"),
-          line(h_flex().gap(4).child(div().text_color(t.ansi2).child("↑2")).child(div().text_color(t.ansi1).child("↓1")), "Push (click twice) or pull"),
-          line(h_flex().gap(2).items_center().text_color(t.dim).child(icon("mods/over9k/pull-request.svg", 11)).child("3"), "Pull requests. Red if your review is wanted"),
-          line(h_flex().gap(2).items_center().text_color(t.dim).child(icon("mods/over9k/issue.svg", 11)).child("2"), "Open issues, on your repos"),
-          line(h_flex().gap(2).items_center().text_color(t.dim).child(icon("mods/over9k/star.svg", 11)).child("8"), "Stars, on your repos"),
+          line(h_flex().gap(4).child(div().text_color(t.ansi2).child("↑2")).child(div().text_color(t.ansi1).child("↓1")), "Push or pull (click twice)"),
         ])),
 
     part("Agents",
@@ -263,18 +257,7 @@ export function helpTopics(view, t) {
           note("Each service's 5-hour and weekly limits, above Settings"),
           line(pct(9), "Under 50%"), line(pct(52), "From 50%"), line(pct(81), "From 80%"),
           line(key("Click"), "Every limit, and when each resets"),
-          note("Claude's and Gemini's need their session footer (next page)"),
           note("Pick which show in Options › Usage"),
-        ]),
-      topic("Session footers",
-        frame(
-          footerLine("claude", [div().child("Opus 5.5 · high"), div().child("context"), pct(42), small("cache 59m"), div().child("5h"), pct(12), small("· 1h 59m"), div().child("week"), pct(83), small("· 2d 1h")]),
-          footerLine("antigravity", [div().child("context"), pct(21), div().child("5h"), pct(30), small("· 1h 0m"), div().child("week"), pct(20), small("· 6d 11h")])), [
-          note("The line under an agent's prompt. Agent rows, subagent rows and Usage read each agent directly: its files, or the session footer it shows"),
-          line(logo("claude"), "Claude Code: Over9k's adds your 5-hour and weekly limits (or API spend) to Usage"),
-          line(logo("antigravity"), "Antigravity: Over9k's adds its context to Agent rows, and Gemini's limits to Usage"),
-          line(h_flex().gap(4).child(logo("codex")).child(logo("pi")), "Codex and Pi: none needed"),
-          note("Turn them on in Options › Session footers. Any you set up yourself comes back when off"),
         ])),
 
     part("Extras",
@@ -303,11 +286,8 @@ export function helpTopics(view, t) {
         ]),
       topic("Expired cache",
         frame(
-          agent("Fix the login bug", { idle: true, two: true, status: dot(done), info: [...facts("Opus 5.5", pct(64), "1h"), div().ml(4).px(2).rounded(4).bg(t.hover).text_color(t.ansi1).child("clear + recap")] }),
-          h_flex().h(18).pl(30).items_center().text_size(11).text_color(t.dim).child("↓"),
-          agent("Fix the login bug", { status: spinner(), two: true, info: facts("Opus 5.5", pct(3)) })), [
-          line(div().text_color(t.ansi1).child("exp."), "The next message would re-read the whole chat"),
-          line(key("Click"), "Start fresh from a short recap. Much cheaper"),
+          agent("Fix the login bug", { idle: true, two: true, status: dot(done), info: [...facts("Opus 5.5", pct(64), "1h"), div().ml(4).px(2).text_color(t.ansi1).child("exp.")] })), [
+          line(div().text_color(t.ansi1).child("exp."), "Only a mark: the prompt cache ran out, so the next message re-reads the whole chat"),
         ]),
       topic("Other models",
         side(
@@ -320,29 +300,6 @@ export function helpTopics(view, t) {
             .child(svg("mods/over9k/qwen.svg").size(10).text_color("#6f69f7")).child("Qwen3")] }))))), [
           line(key("Model ›"), "Pi on one of its models, local ones too (Pi's models.json)"),
           line(small("Qwen3"), "A running server. Click to stop it"),
-        ]),
-      topic("Hand-off",
-        frame(
-          space("~", null),
-          agent("Can you fix the footer?", { idle: true, status: dot(done), info: facts("Opus 5.5", pct(8), "1m") }),
-          space("my-app", BLUE),
-          agent("Fix the footer", { status: spinner(), info: facts("Opus 5.5", pct(6)) })), [
-          note("A chat outside your projects passes project work to a new agent in that project. Turn it on in Options"),
-        ]),
-      topic("Updates",
-        side(
-          frame(h_flex().h(28).px(8).gap(9).items_center().text_color(t.muted)
-            .child(icon(`${CHROME}/panel-left.svg`, 14, t.muted)).child("Over9k help & options")
-            .child(div().ml_auto().flex_none().px(5).py(1).rounded(4).bg(t.ansi1 + "26").text_size(10.5).text_color(t.ansi1).child("Update"))),
-          v_flex().flex_none().p(10).gap(3).rounded(8).border_1().border_color(t.accent + "66").bg(t.accent + "14").text_size(12)
-            .child(h_flex().gap(10).items_center().child(div().flex_1().font_semibold().text_color(t.foreground).child("Update available \u00b7 2 changes"))
-              .child(h_flex().h(22).px(10).flex_none().rounded(6).items_center().bg(t.solid).text_size(11.5).text_color(t.solid_foreground).child("Update")))
-            .child(div().text_color(t.muted).child("\u2022  Fix: the footer on mobile"))
-            .child(div().text_color(t.muted).child("\u2022  Help: an Updates page"))), [
-          line(div().flex_none().px(5).py(1).rounded(4).bg(t.ansi1 + "26").text_size(10.5).text_color(t.ansi1).child("Update"),
-            "A newer Over9k where you installed it from (a git clone)"),
-          line(button("Update", true), "Pulls it and installs it again. Settings and lists stay"),
-          note("Turn the check off in Options \u203a Folders"),
         ])),
   ].flat();
 }

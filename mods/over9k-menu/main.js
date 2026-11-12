@@ -51,8 +51,6 @@ function items(p, git) {
       const toProgram = term?.labels?.["herdr.right-click"] === "program";
       return [
         ["Rename", "pane.rename", { pane: tg.pane, terminal: tg.terminal }],
-        // An agent's work to a space of its own (over9k-handoff).
-        ...(agents().some((a) => a.address === tg.terminal) ? [["Hand off\u2026", "pane.handoff", { terminal: tg.terminal }]] : []),
         ...folderItem(paneAt(tg.pane)),
         ["Split right", "pane.split", { direction: "right", pane: tg.pane }],
         ["Split down", "pane.split", { direction: "down", pane: tg.pane }],
@@ -224,7 +222,6 @@ export function closeAsk(picked) {
 }
 
 function menuIcon(command) {
-  if (command === "pane.handoff") return "mods/over9k/handoff.svg";
   const name = command === "folder.reveal" ? "folder" : command === "panes.group" ? "layers" : command === "panes.separate" ? "panel-right" : command === "project.rename" ? "square-pen" : command === "project.open" ? "plus" : command === "icon.paste" ? "square" : command === "icon.choose" ? "folder" : command === "icon.find" ? "search" : command === "icon.remove" ? "x" : command === "list.pin" ? "pin" : command.startsWith("list.") ? "pin-off" : command.endsWith(".close") || command === "close-ask" || command === "close-many" ? "x" : command.endsWith(".rename") ? "square-pen" : command.endsWith(".new") ? "plus" : command === "worktree" ? "git-branch" : command === "app.help" ? "terminal" : command === "app.theme" ? "settings" : command === "pane.split" ? "panel-right" : command === "pane.zoom" ? "square" : "terminal";
   return `mods/workspace-chrome/${name}.svg`;
 }
@@ -263,11 +260,6 @@ export default class Menu extends View {
     else if (it[1] === "folder.reveal") exec("sh", ["-c", REVEAL, "sh", it[2].folder]).catch(() => null);
     else if (it[1] === "project.rename") openOverlay({ mod: "over9k-rename", kind: "dialog", width: 380, height: 200, props: { folder: it[2].folder, machine: it[2].machine, value: it[2].name, title: "Rename space" } });
     else if (it[1] === "pane.rename") renamePane(it[2]);
-    else if (it[1] === "pane.handoff") {
-      const a = agents().find((x) => x.address === it[2].terminal);
-      const p = panes().find((x) => x.terminal === it[2].terminal);
-      openOverlay({ mod: "over9k-handoff", kind: "dialog", width: 420, height: 360, props: { terminal: it[2].terminal, name: (a && agentTask(a, p?.cwd)) || a?.program?.name } });
-    }
     else if (it[1] === "panes.group") movePanes(GROUP, it[2]);
     else if (it[1] === "panes.separate") movePanes(SEPARATE, it[2]);
     else if (it[1] === "close-many") {

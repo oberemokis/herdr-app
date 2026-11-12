@@ -8,7 +8,7 @@
 // Every terminal and agent lists under the project or space its live folder is
 // in (any other folder gets a row of its own; ~ itself is the home space), so
 // there's no separate Agents section. Rows show the GitHub link, uncommitted
-// files, unpushed/unpulled commits and open PRs, each one clickable.
+// files and unpushed/unpulled commits, each one clickable.
 
 import { View, div, image, svg } from "gpui-kit";
 import { v_flex, h_flex } from "gpui-base";
@@ -73,9 +73,8 @@ const base = (path) => path.replace(/\/+$/, "").split("/").pop();
 // Changes made outside Herdr (an editor's save, a commit in another app): looked
 // for this often, in repos the list shows, while the window is in front.
 const FALLBACK = 60000;
-// How often each GitHub repo is fetched (so ↓ is current) and its pull requests
-// counted. Git never asks for a password here: it fails instead.
-const REMOTE = 300000;
+// Push and pull from the list: git never asks for a password here, it fails instead.
+// Сами не делаем fetch: ↓ считается от того, что последний fetch положил локально.
 const QUIET = ["GIT_TERMINAL_PROMPT=0", "GIT_SSH_COMMAND=ssh -o BatchMode=yes"];
 // Folders in a code folder that are never offered as projects (by name; unpin
 // or hide one from its right-click menu instead), and how often new ones are looked for.
@@ -92,7 +91,7 @@ const MARKED = `{ for d in "$@"; do case "$d" in "~") d=$HOME ;; "~/"*) d="$HOME
 } | sed 's#/[^/]*$##' | sort -u`;
 // A computer's two places (set in over9k-options): Chats, where conversations
 // about no project start (home unless set), and Projects, where every git repo
-// is a project and hand-offs (handoff.sh) make new ones. Unset, Projects is the
+// is a project. Unset, Projects is the
 // folder that computer's CLAUDE.md/AGENTS.md name on a line about projects (a
 // `~/…` in backticks; over9k's own rule left out), else home. Prints it as typed.
 const PROJECTS_FROM_RULES = `for f in "$HOME/.claude/CLAUDE.md" "$HOME/.codex/AGENTS.md" "$HOME/.pi/agent/AGENTS.md"; do
@@ -235,7 +234,7 @@ const dotted = (parts) => parts.flatMap((el, n) => (n ? [div().px(1).child("\u00
 
 // Agent rows' layout and what they show, until over9k-options says otherwise
 // (shared "sidebar.options"; the same defaults as there).
-const OPTIONS = { keepUpToDate: false, layout: "expanded", model: true, effort: true, context: true, since: true, cache: true, github: true, dirty: true, sync: true, prs: true, stars: true, issues: true,
+const OPTIONS = { keepUpToDate: false, layout: "expanded", model: true, effort: true, context: true, since: true, cache: true, github: true, dirty: true, sync: true,
   subModel: true, subEffort: true, subContext: true, subTime: true };
 
 // Model families with a logo of their own, a badge on the agent's icon.
@@ -304,11 +303,6 @@ export default class Spaces extends View {
     this.projects = []; // shown projects: Claude's folders + pinned - hidden (see render)
     this.auto = []; // ~/Code git repos and folders with a CLAUDE.md, AGENTS.md or .claude
     this.tops = new Map(); // a terminal's folder -> its repo's top (else itself)
-    // A shell's last command: the last prompt line ("❯ make") on its screen,
-    // kept once seen (a clear wipes the screen). Shared as terminals.last for
-    // the tab bar (over9k-tabs).
-    this.lastCmd = {};
-    cx.timer.every(4000, (cx) => this.readCommands(cx));
     // Spaces whose agents are folded away, and whether the not-open projects show.
     this.agentsFolded = new Set(JSON.parse(localStorage.getItem("agents.folded") ?? "[]"));
     this.closedOpen = localStorage.getItem("projects.closedOpen") === "true";
@@ -348,11 +342,7 @@ export default class Spaces extends View {
     this.closedAt = shared("over9k.closeSubs")?.at ?? null;
     cx.timer.every(60000, (cx) => cx.notify()); // the "3m"s move on
     this.loadInfo(cx);
-    this.prs = {}; // "owner/repo" -> { open, review }: open pull requests, those asking you
-    this.write = {}; // "owner/repo" -> you can push there (yours, or your team's)
-    this.repoInfo = {}; // "owner/repo" -> { stars, issues }: its stars and open issues on GitHub
-    this.me = null; // your GitHub login
-    this.armed = null; // ↑ clicked once: { repo, until }; a second click pushes
+    this.armed = null; // ↑ or ↓ clicked once: { repo, op, until }; a second click pushes or pulls
     this.sel = new Set(); // Ctrl+clicked rows: "s:<space>", "p:<pane>", "d:<project folder>"
     // Keys bound to this mod (keys.json): ctrl-shift-w is "over9k.close-tab".
     cx.spawn(async (cx) => {
@@ -365,8 +355,6 @@ export default class Spaces extends View {
         cx.notify();
       }
     });
-    cx.timer.after(5000, (cx) => this.refreshRemote(cx));
-    cx.timer.every(REMOTE, (cx) => this.refreshRemote(cx));
     cx.timer.every(5000, (cx) => this.loadInfo(cx));
     // Looked for at start and when the folders change (loadInfo); again every
     // RESCAN only with over9k-options' "Keep sidebar up to date" on.
@@ -487,59 +475,6 @@ export default class Spaces extends View {
     const was = JSON.stringify(Object.keys(this.sshTo ?? {}));
     this.sshTo = Object.fromEntries(Object.entries({ ...(this.sshTo ?? {}), ...seen }).filter(([, v]) => now - v.at < 60000));
     return JSON.stringify(Object.keys(this.sshTo)) !== was || Object.keys(seen).length > 0; // redraw
-  }
-
-  // Over9k's helpers in ~/.local/share/over9k: handoff.sh and resume.sh (the
-  // hand-off rule points there), locations.json (Chats and Projects),
-  // spaces.json (open spaces by folder, for handoff.sh where no Herdr window
-  // runs) and servers.json (this computer's). Written only on change. This
-  // computer always gets them; another only while its Automatic hand off is on
-  // (over9k-options), which also puts the rule into its CLAUDE.md/AGENTS.md;
-  // turned off, the rule and the helpers go again.
-  async syncHelpers() {
-    const mods = `${appHome()}/mods`;
-    this.helperFiles ??= {
-      "handoff.sh": await readTextFile(`${mods}/over9k/handoff.sh`).catch(() => null),
-      "resume.sh": await readTextFile(`${mods}/over9k-new-menu/resume.sh`).catch(() => null),
-    };
-    this.synced ??= {};
-    const wanted = shared("sidebar.options")?.computers ?? {};
-    const connected = this.machines.filter((m) => m.state === "connected" && this.remote[m.name]).map((m) => m.name);
-    this.ruleOn ??= {};
-    for (const m of connected) {
-      const on = Boolean(wanted[m]?.handoffRule);
-      if (!on && this.ruleOn[m]) {
-        await exec("sh", ["-c", 'sh "$HOME/.local/share/over9k/handoff.sh" --rule off; rm -rf "$HOME/.local/share/over9k"'], { on: m }).catch(() => null);
-        for (const k of Object.keys(this.synced)) if (k.startsWith(`${m}/`)) delete this.synced[k];
-      }
-      if (!on) this.ruleOn[m] = false;
-    }
-    const up = [null, ...connected.filter((m) => wanted[m]?.handoffRule)];
-    for (const m of up) {
-      const loc = m ? { chats: this.remote[m].chats, projects: this.remote[m].projects } : shared("over9k.locations") ?? {};
-      const open = Object.fromEntries(this.frame?.sp.filter((s) => (s.machine ?? null) === m && s.folder)
-        .map((s) => [s.folder.replace(/\/+$/, ""), m ? s.id.replace(`${m}/`, "") : s.id]) ?? []);
-      const files = { ...this.helperFiles, "locations.json": JSON.stringify(loc), "spaces.json": JSON.stringify(open) };
-      // This computer's model servers come along for resume.sh.
-      if (!m) files["servers.json"] = await readTextFile(`${mods}/over9k-new-menu/servers.json`).catch(() => null);
-      for (const [name, text] of Object.entries(files)) {
-        const key = `${m ?? ""}/${name}`;
-        if (text == null || this.synced[key] === text) continue;
-        const r = await exec("sh", ["-c", 'mkdir -p "$HOME/.local/share/over9k" && printf %s "$2" > "$HOME/.local/share/over9k/$1"', "sh", name, text], m ? { on: m } : {}).catch(() => null);
-        if (r?.code === 0) this.synced[key] = text;
-      }
-      // Folders handed off to (handoff.sh lists them in "pin"): pinned, as the
-      // menus' Pin does, so they stay listed.
-      const p = await exec("sh", ["-c", 'f="$HOME/.local/share/over9k/pin"; [ -s "$f" ] || exit 0; mv "$f" "$f.$$" && cat "$f.$$" && rm -f "$f.$$"'], m ? { on: m } : {}).catch(() => null);
-      const handed = (p?.stdout ?? "").split("\n").map((d) => d.trim().replace(/\/+$/, "")).filter(Boolean);
-      if (handed.length) this.pinHanded(handed, m);
-      // Another computer's rule, once its helpers are there (written again when its folders change).
-      const sig = m && JSON.stringify(loc);
-      if (m && this.ruleOn[m] !== sig) {
-        const r = await exec("sh", ["-c", 'sh "$HOME/.local/share/over9k/handoff.sh" --rule on'], { on: m }).catch(() => null);
-        if (r?.code === 0) this.ruleOn[m] = sig;
-      }
-    }
   }
 
   // Under another computer: this computer's agents SSH'd into it (findSsh),
@@ -677,7 +612,6 @@ export default class Spaces extends View {
             }
           } catch {}
         }
-        await this.syncHelpers();
         const ssh = await this.findSsh();
         // Claude Code's subagents, per agent: from its transcript's folder (subagents.sh).
         this.subScript ??= await readTextFile(`${appHome()}/mods/over9k/subagents.sh`).catch(() => null);
@@ -864,8 +798,7 @@ export default class Spaces extends View {
   // used (its percent green, yellow from 50%, red from 80%; "medium" shows as
   // "med", a purple * after it while ultracode is on), time since it last
   // worked; then a red "exp."
-  // once the prompt cache has run out. Clicking it starts over (freshStart);
-  // hovering says so ("clear + recap").
+  // once the prompt cache has run out.
   // What shows is up to over9k-options (o): each item, joined by dots.
   // How many agents, subagents and processes an agent has started (BOT / SUB / CPU), a
   // click shows or hides them (subRows); hovered, in words.
@@ -939,54 +872,9 @@ export default class Spaces extends View {
     ].filter(Boolean);
     return h_flex().flex_none().items_center().text_size(11).text_color(t.dim)
       .children(dotted(parts))
-      .when(Boolean(o.cache && i.cold), (el) => el.child(div().id(`exp-${terminal}`).ml(4).px(2).rounded(4).cursor_pointer().text_color(t.ansi1)
-        .hover((s) => s.bg(t.hover))
-        .on_mouse_down("left", (_e, cx) => cx.stop_propagation())
-        .on_hover((on, cx) => { if (on) this.hoverExp = terminal; else if (this.hoverExp === terminal) this.hoverExp = null; cx.notify(); })
-        .on_click((_e, cx) => { cx.stop_propagation(); this.freshStart(terminal, i.transcript, name, cx); })
-        .child(this.hoverExp === terminal ? "clear + recap" : "exp.")))
+      // Только отметка: очистка с пересказом вписывала команды в терминал агента.
+      .when(Boolean(o.cache && i.cold), (el) => el.child(div().ml(4).px(2).text_color(t.ansi1).child("exp.")))
       .when(Boolean(extra), (el) => el.child(extra.ml(5)));
-  }
-
-  // With the cache gone the next message pays for the whole conversation again,
-  // so start a new one (/clear) and have it read the old transcript for context.
-  // The old one is renamed "[Cleared] <name>" first, so Claude's own /resume
-  // picker tells them apart. The new one is named from the first line of
-  // Claude's recap ("Name: ..."): its automatic title would only be about
-  // reading a transcript, and carrying that forward named every one the same.
-  freshStart(terminal, transcript, name, cx) {
-    // An automatic title taken from an earlier recap prompt says nothing.
-    if (name && /transcript recap/i.test(name)) name = null;
-    cx.spawn(async (cx) => {
-      if (name) {
-        await hc(["send", terminal, `/rename [Cleared] ${name}`]).catch(() => null);
-        await cx.sleep(800);
-      }
-      await hc(["send", terminal, "/clear"]).catch(() => null);
-      if (!transcript) return;
-      // A prompt sent before /clear finishes is lost: wait until claude-info.py
-      // reports the new conversation's transcript (up to 35s), then a moment more.
-      let fresh = null;
-      for (let n = 0; n < 70; n++) {
-        await cx.sleep(500);
-        const now = await readTextFile(`${this.infoDir}/${terminal}.json`).catch(() => null);
-        try { fresh = now && JSON.parse(now).transcript; } catch { fresh = null; }
-        if (fresh && fresh !== transcript) break;
-        fresh = null;
-      }
-      await cx.sleep(500);
-      await hc(["send", terminal, `We just cleared the conversation because its prompt cache expired. For context, read the previous conversation's transcript at ${transcript} (JSONL; mostly its last part: what I asked, what was done, what's still open). Start your reply with one line "Name: <3 to 5 words naming what we're working on>" (it becomes this session's name), then tell me in a few lines where we left off, and wait for my next message.`]).catch(() => null);
-      if (!fresh) return;
-      // Watch for the reply (up to 5 minutes) and rename as soon as it lands,
-      // before there's much chance of a half-typed message for /rename to join.
-      for (let n = 0; n < 300; n++) {
-        await cx.sleep(1000);
-        const got = recapName(await readTextFile(fresh).catch(() => null));
-        if (!got) continue;
-        await hc(["send", terminal, `/rename ${got}`]).catch(() => null);
-        return;
-      }
-    });
   }
 
   // Which row each terminal lists under: the space or project its live folder is
@@ -1226,7 +1114,8 @@ export default class Spaces extends View {
     const asks = {};
     for (const x of list) {
       if (x.kind === "terminal") run("terminal.kill", { terminal: x.terminal });
-      else if (x.kind === "pid") exec("kill", [String(x.pid)]).catch(() => null);
+      // pid с другого компьютера здесь принадлежит чужому процессу: такой пропускаем.
+      else if (x.kind === "pid") { if (x.local === true) exec("kill", [String(x.pid)]).catch(() => null); }
       else (asks[x.agent] ??= []).push(x.text);
     }
     for (const [agent, items] of Object.entries(asks))
@@ -1580,13 +1469,15 @@ export default class Spaces extends View {
       const order = x.kind === "cron" ? `scheduled prompt ${x.id}: CronDelete`
         : x.kind === "wakeup" ? "scheduled wakeup: ScheduleWakeup with stop: true"
         : `background ${x.kind} "${x.desc}" (task id ${x.id}): TaskStop`;
-      const stop = x.kind === "cshell" ? () => exec("kill", [x.id]).catch(() => null) : () => ask(`Stop your ${order}, then tell me in one line.`);
+      // codex.sh мог отработать на другом компьютере: его pid здесь чужой, убивать только свой.
+      const here = !a.address.includes("/");
+      const stop = x.kind === "cshell" ? () => { if (here) exec("kill", [x.id]).catch(() => null); } : () => ask(`Stop your ${order}, then tell me in one line.`);
       // Beside its name: a scheduled prompt's schedule, a wakeup's time to go, a
       // command's kind and how long it has run.
       const what = x.kind === "cron" ? facts(short(x.schedule ?? "").replace(/^./, (ch) => ch.toLowerCase()))
         : x.kind === "wakeup" ? facts("wakeup", span(Math.max(0, +x.schedule - now)))
         : facts(x.kind === "cshell" ? "command" : x.kind, x.start && ranFor(now - x.start));
-      return row(id, key, x.kind === "cshell" ? { kind: "pid", pid: x.id } : { kind: "ask", agent: a.address, text: order })
+      return row(id, key, x.kind === "cshell" ? { kind: "pid", pid: x.id, local: here } : { kind: "ask", agent: a.address, text: order })
         .on_mouse_down("left", (e, cx) => this.subClick(e, cx, key, () => x.output ? this.view(x.output, a.address, "output-view.sh", [x.output, x.desc], cx, x.desc, e)
           // A scheduled prompt or wakeup: itself, in place (note-view.sh): when, whose, what.
           : cron ? this.view(`note-${x.kind}-${x.id}`, a.address, "note-view.sh", [
@@ -1615,41 +1506,16 @@ export default class Spaces extends View {
   }
 
 
-  // A plain terminal's name: its tab's when someone renamed it, else the last
-  // command run in it (readCommands), else "New CLI". An agent that hasn't
+  // A plain terminal's name: its tab's when someone renamed it, else the
+  // command in its title, else "New CLI". An agent that hasn't
   // reported yet (Codex's update prompt) already goes by its agent name.
   termName(p, tab, key) {
     if (p.program?.agent) return agentName(p, tab, p.cwd);
     if (!/^(\d+|t[0-9a-z]+)$/.test(tab.name) && tab.name !== p.program?.name) return tab.name;
-    // Started straight on an ssh (no prompt to read): that command (findSsh).
-    const command = this.lastCmd[p.terminal] ?? this.titleCommand(p.title, p.program?.name ?? "") ?? this.sshTo?.[p.terminal]?.cmd;
+    // Экран шелла не читаем: имя только из заголовка или запущенного ssh (findSsh).
+    const command = this.titleCommand(p.title, p.program?.name ?? "") ?? this.sshTo?.[p.terminal]?.cmd;
     if (command) return command.length > 48 ? `${command.slice(0, 47)}\u2026` : command;
     return "New CLI";
-  }
-
-  // Each shell's screen (here or on a connected computer), for its last prompt line. Only what changed is shared.
-  readCommands(cx) {
-    if (this.reading || !this.frame) return;
-    // Here, and on other computers that are connected (read over Herdr's link).
-    const up = new Set(this.machines.filter((m) => m.state === "connected").map((m) => m.name));
-    const reachable = new Set(this.frame.sp.filter((s) => !s.machine || up.has(s.machine)).flatMap((s) => (s.tabs ?? []).map((t) => t.id)));
-    const shells = this.frame.ps.filter((p) => p.terminal && reachable.has(p.tab) && !this.frame.byPane.get(p.pane));
-    if (!shells.length) return;
-    this.reading = true;
-    cx.spawn(async (cx) => {
-      let changed = false;
-      for (const p of shells) {
-        const r = await hc(["read", p.terminal, "--lines", "200"]).catch(() => null);
-        const lines = (r?.stdout ?? "").split("\n").map((l) => /^\s*\u276f\s+(\S.*?)\s*$/.exec(l)?.[1]).filter(Boolean);
-        const last = lines[lines.length - 1];
-        if (last && last !== this.lastCmd[p.terminal]) { this.lastCmd[p.terminal] = last; changed = true; }
-      }
-      const live = new Set(this.frame.ps.map((p) => p.terminal));
-      for (const t of Object.keys(this.lastCmd)) if (!live.has(t)) { delete this.lastCmd[t]; changed = true; }
-      if (changed) setShared("terminals.last", { ...this.lastCmd });
-      this.reading = false;
-      if (changed) cx.notify();
-    });
   }
 
   // Every terminal of the space picked one by one: closing them closes it too.
@@ -1739,7 +1605,7 @@ export default class Spaces extends View {
         const named = set.projects ? null : (await exec("sh", ["-c", PROJECTS_FROM_RULES]).catch(() => null))?.stdout.trim();
         const where = { chats: set.chats ? full(set.chats) : homeDir(), projects: set.projects ? full(set.projects) : named ? full(named) : homeDir() };
         const code = [where.projects];
-        // Shared for handoff.sh, the + menu's scan and over9k-options.
+        // Shared for the + menu's scan and over9k-options.
         if (JSON.stringify(where) !== JSON.stringify(shared("over9k.locations"))) setShared("over9k.locations", where);
         if (JSON.stringify(code) !== JSON.stringify(shared("projects.codeFolders"))) setShared("projects.codeFolders", code);
         const r = await exec("sh", ["-c", MARKED, "sh", ...code]);
@@ -1821,19 +1687,6 @@ export default class Spaces extends View {
     add.forEach((d) => pinned.add(d));
     if (m) setShared("projects.on", { ...(shared("projects.on") ?? {}), [m]: { ...on, pinned: [...pinned] } });
     else setShared("projects.pinned", [...pinned]);
-  }
-
-  // Pins folders (as over9k-menu's Pin: not hidden, not unpinned any more).
-  pinHanded(dirs, m = null) {
-    const all = shared("projects.on") ?? {}, on = m ? all[m] ?? {} : null;
-    const pinned = new Set(m ? on.pinned ?? [] : shared("projects.pinned") ?? []);
-    const hidden = new Set(m ? on.hidden ?? [] : shared("projects.hidden") ?? []);
-    const unpinned = new Set(m ? on.unpinned ?? [] : shared("projects.unpinned") ?? []);
-    for (const d of dirs) { pinned.add(d); hidden.delete(d); unpinned.delete(d); }
-    if (m) return setShared("projects.on", { ...all, [m]: { ...on, pinned: [...pinned], hidden: [...hidden], unpinned: [...unpinned] } });
-    setShared("projects.pinned", [...pinned]);
-    setShared("projects.hidden", [...hidden]);
-    setShared("projects.unpinned", [...unpinned]);
   }
 
   // The first time this version runs: everything the list showed before
@@ -2037,7 +1890,7 @@ export default class Spaces extends View {
       const common = await exec("git", ["rev-parse", "--path-format=absolute", "--git-common-dir"], { cwd, on });
       const repo = common.stdout.trim();
       const name = repo.endsWith("/.git") ? base(repo.slice(0, -5)) : base(repo).replace(/\.git$/, "");
-      const info = { name, branch: null, ahead: 0, behind: 0, dirty: 0, web: null, slug: null, top: top.stdout.trim(), repo: JSON.stringify([on, repo]), linked: repo !== `${top.stdout.trim()}/.git` };
+      const info = { name, branch: null, ahead: 0, behind: 0, dirty: 0, web: null, top: top.stdout.trim(), repo: JSON.stringify([on, repo]), linked: repo !== `${top.stdout.trim()}/.git` };
       for (const line of r.stdout.split("\n")) {
         if (line && !line.startsWith("#")) info.dirty++;
         else if (line.startsWith("# branch.head ")) info.branch = line.slice(14);
@@ -2052,7 +1905,7 @@ export default class Spaces extends View {
         .map((l) => l.split(/\s+/)).filter(([n, , kind]) => kind === "(fetch)").sort(([a], [b]) => (b === "origin") - (a === "origin"));
       for (const [, url] of urls) {
         const m = /github\.com[:/]+([^/]+\/[^/]+?)(?:\.git)?\/?$/.exec(url ?? "");
-        if (m) { info.web = `https://github.com/${m[1]}`; info.slug = m[1]; break; }
+        if (m) { info.web = `https://github.com/${m[1]}`; break; }
       }
       this.git[key] = info;
       if (!on) this.watch(repo, cx);
@@ -2283,35 +2136,25 @@ export default class Spaces extends View {
 
   // Next to the name (after its GitHub icon), each a button: uncommitted files
   // (shows Changes), commits not pushed (push, on a second click), commits to
-  // pull (pull, fast-forward only), open pull requests, open issues and stars
-  // (each opens its page on GitHub; issues and stars only on a repo you can
-  // push to, not one you only cloned). Each kind only when over9k-options shows
-  // it (dirty, sync, prs, issues, stars).
+  // pull (pull, fast-forward only, on a second click). Each kind only when
+  // over9k-options shows it (dirty, sync).
   counts(g, t, show) {
     const out = [], o = this.frame.options;
     if (o.dirty && g.dirty > 0) out.push(this.action(div().id(`dirty-${g.repo}`).text_color(t.ansi3), g, t,
       `See ${plural(g.dirty, "uncommitted file")}`, show).child(String(g.dirty)));
     if (o.sync && g.ahead > 0) {
       const can = this.canPush(g);
-      const armed = this.armed?.repo === g.repo;
+      const armed = this.armed?.repo === g.repo && this.armed.op === "push";
       out.push(this.action(div().id(`ahead-${g.repo}`).text_color(t.ansi2).when(armed, (el) => el.bg(t.hover)), g, t,
-        armed ? "Click again to push" : can ? `Push ${plural(g.ahead, "commit")}` : this.write[g.slug] === false ? `${plural(g.ahead, "commit")} not pushed (not your repo)` : `${plural(g.ahead, "commit")} not pushed (shared main: use a PR)`,
-        can ? (cx) => this.push(g, cx) : null).child(`\u2191${g.ahead}`));
+        armed ? "Click again to push" : can ? `Push ${plural(g.ahead, "commit")}` : `${plural(g.ahead, "commit")} not pushed (shared main: use a PR)`,
+        can ? (cx) => this.confirmGit(g, "push", cx) : null).child(`\u2191${g.ahead}`));
     }
-    if (o.sync && g.behind > 0) out.push(this.action(div().id(`behind-${g.repo}`).text_color(t.ansi1), g, t,
-      `Pull ${plural(g.behind, "new commit")}`, (cx) => this.gitOp(g, ["pull", "--ff-only", "--quiet"], `Pulled ${g.name}`, cx))
-      .child(`\u2193${g.behind}`));
-    const pr = g.slug && this.prs[g.slug];
-    if (o.prs && pr?.open) out.push(this.action(h_flex().id(`pr-${g.repo}`).gap(2).items_center().text_color(pr.review ? t.blocked : t.dim), g, t,
-      pr.review ? `${plural(pr.open, "pull request")}, ${pr.review} needs your review` : `Open ${plural(pr.open, "pull request")}`,
-      (cx) => cx.open_url(`${g.web}/pulls`)).child(svg("mods/over9k/pull-request.svg").size(11)).child(String(pr.open)));
-    const info = g.slug && this.write[g.slug] && this.repoInfo[g.slug];
-    if (o.issues && info?.issues) out.push(this.action(h_flex().id(`issues-${g.repo}`).gap(2).items_center().text_color(t.dim), g, t,
-      `Open ${plural(info.issues, "issue")}`, (cx) => cx.open_url(`${g.web}/issues`))
-      .child(svg("mods/over9k/issue.svg").size(11)).child(String(info.issues)));
-    if (o.stars && info?.stars) out.push(this.action(h_flex().id(`stars-${g.repo}`).gap(2).items_center().text_color(t.dim), g, t,
-      `${plural(info.stars, "star")} on GitHub`, (cx) => cx.open_url(`${g.web}/stargazers`))
-      .child(svg("mods/over9k/star.svg").size(11)).child(String(info.stars)));
+    if (o.sync && g.behind > 0) {
+      const armed = this.armed?.repo === g.repo && this.armed.op === "pull";
+      out.push(this.action(div().id(`behind-${g.repo}`).text_color(t.ansi1).when(armed, (el) => el.bg(t.hover)), g, t,
+        armed ? "Click again to pull" : `Pull ${plural(g.behind, "new commit")}`, (cx) => this.confirmGit(g, "pull", cx))
+        .child(`\u2193${g.behind}`));
+    }
     return out.length ? [h_flex().flex_none().gap(3).items_center().text_size(11.5).children(out)] : [];
   }
 
@@ -2324,24 +2167,24 @@ export default class Spaces extends View {
       .on_click((_e, cx) => { cx.stop_propagation(); fn(cx); });
   }
 
-  // A repo you can push to: your own, or your team's off its main branch (a shared
-  // repo's main takes PRs).
+  // A branch you can push to: any but main/master (a shared repo's main takes PRs).
+  // Владельца репозитория без gh не узнать, поэтому main/master закрыт для всех.
   canPush(g) {
-    if (g.slug && this.write[g.slug] === false) return false;
-    const owner = g.slug?.split("/")[0];
-    return Boolean(this.me && owner === this.me) || !["main", "master"].includes(g.branch);
+    return !["main", "master"].includes(g.branch);
   }
 
-  push(g, cx) {
-    if (!(this.armed?.repo === g.repo && Date.now() < this.armed.until)) {
-      this.armed = { repo: g.repo, until: Date.now() + 4000 };
-      this.tip = { repo: g.repo, text: "Click again to push" };
-      cx.timer.after(4000, (cx) => { if (this.armed?.repo === g.repo) { this.armed = null; cx.notify(); } });
+  // Push and pull: the first click arms, a second within 4 s runs it.
+  confirmGit(g, op, cx) {
+    if (!(this.armed?.repo === g.repo && this.armed.op === op && Date.now() < this.armed.until)) {
+      this.armed = { repo: g.repo, op, until: Date.now() + 4000 };
+      this.tip = { repo: g.repo, text: `Click again to ${op}` };
+      cx.timer.after(4000, (cx) => { if (this.armed?.repo === g.repo && this.armed.op === op) { this.armed = null; cx.notify(); } });
       cx.notify();
       return;
     }
     this.armed = null;
-    this.gitOp(g, ["push", "--quiet"], `Pushed ${g.name}`, cx);
+    if (op === "push") this.gitOp(g, ["push", "--quiet"], `Pushed ${g.name}`, cx);
+    else this.gitOp(g, ["pull", "--ff-only", "--quiet"], `Pulled ${g.name}`, cx);
   }
 
   // Runs git in the repo, says how it went, and looks at the repo again.
@@ -2370,44 +2213,6 @@ export default class Spaces extends View {
     let tries = 0;
     const wait = (cx) => cx.timer.after(50, (cx) => (there() ? cx.timer.after(150, () => show()) : ++tries < 60 && wait(cx)));
     wait(cx);
-  }
-
-  // Each GitHub repo in the list, one after another: fetch, then count its open
-  // PRs, open issues and stars.
-  refreshRemote(cx) {
-    if (this.remoteBusy) return;
-    this.remoteBusy = true;
-    cx.spawn(async (cx) => {
-      try {
-        if (!this.me) this.me = (await exec("gh", ["api", "user", "--jq", ".login"])).stdout.trim() || null;
-        const seen = new Set();
-        for (const [k, g] of Object.entries(this.git)) {
-          if (!g?.slug || seen.has(g.repo)) continue;
-          seen.add(g.repo);
-          // Fetched where the repo is (another computer's over SSH); its PRs come from GitHub.
-          const on = JSON.parse(k)[0];
-          if (on && !this.machines.some((x) => x.name === on && x.state === "connected")) continue;
-          await exec("env", [...QUIET, "git", "fetch", "--quiet"], { cwd: g.top, on: on ?? undefined });
-          const v = await exec("gh", ["repo", "view", g.slug, "--json", "viewerPermission,stargazerCount,issues",
-            "--jq", "[.viewerPermission, .stargazerCount, .issues.totalCount] | @tsv"]);
-          if (v.code === 0) {
-            const [perm, stars, issues] = v.stdout.trim().split("\t");
-            this.write[g.slug] = ["ADMIN", "MAINTAIN", "WRITE"].includes(perm);
-            this.repoInfo[g.slug] = { stars: Number(stars) || 0, issues: Number(issues) || 0 };
-          }
-          const r = await exec("gh", ["pr", "list", "--repo", g.slug, "--state", "open", "--limit", "100", "--json", "number,reviewRequests,author"]);
-          if (r.code === 0) {
-            // Someone else's project you only cloned: just the PRs that involve you.
-            const list = JSON.parse(r.stdout).filter((p) => this.write[g.slug] !== false || p.author?.login === this.me
-              || (p.reviewRequests ?? []).some((q) => q.login === this.me));
-            this.prs[g.slug] = { open: list.length, review: list.filter((p) => (p.reviewRequests ?? []).some((q) => q.login === this.me)).length };
-          }
-          this.refreshGit(Object.keys(this.git).filter((x) => this.git[x]?.repo === g.repo), cx);
-        }
-      } catch {}
-      this.remoteBusy = false;
-      cx.notify();
-    });
   }
 
   // While the pointer is on `el`, `text` says what it is, in the row's free
@@ -2701,20 +2506,4 @@ export default class Spaces extends View {
         .on_click(() => openOverlay({ mod: "over9k-options", kind: "dialog", width: 740, height: 600 }))
         .child(svg("mods/workspace-chrome/settings.svg").size(14).flex_none()).child("Over9k help & options")));
   }
-}
-
-
-// The "Name: ..." line Claude's recap starts with, once it's there (Claude may
-// say something before reading the transcript, so any of its replies counts).
-function recapName(jsonl) {
-  for (const line of (jsonl ?? "").split("\n")) {
-    if (!line.includes('"assistant"')) continue;
-    let m;
-    try { m = JSON.parse(line); } catch { continue; }
-    if (m.type !== "assistant") continue;
-    const text = (Array.isArray(m.message?.content) ? m.message.content : []).filter((c) => c.type === "text").map((c) => c.text).join("\n");
-    const got = text.match(/^\s*\**Name:\**\s*(.+)$/m)?.[1].replace(/[*`"]/g, "").trim().slice(0, 60);
-    if (got) return got;
-  }
-  return undefined;
 }

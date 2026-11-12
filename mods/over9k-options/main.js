@@ -1,5 +1,5 @@
 // Over9k's help and options (the over9k sidebar reads the options). Options:
-// this computer's Chats and Projects, the hand-off rule, what space and agent
+// this computer's Chats and Projects, what space and agent
 // rows show, and whether agent rows are compact (one line) or expanded (the
 // name, then its info under it). Saved in shared "sidebar.options" as they
 // change. Help: what Over9k adds. Opened from the sidebar footer
@@ -9,29 +9,22 @@ import { View, div, svg, image } from "gpui-kit";
 import { v_flex, h_flex } from "gpui-base";
 import { FolderPick } from "./folder-pick.js";
 import { helpTopics } from "./help.js";
-import { props, closeOverlay, openOverlay, theme, shared, setShared, home, appHome, pickFolder, exec, machines, readTextFile, notify } from "herdr";
+import { props, closeOverlay, openOverlay, theme, shared, setShared, home, pickFolder, exec, machines } from "herdr";
 
-export const DEFAULTS = { keepUpToDate: false, handoffRule: false, todos: true, todoLog: true, todoSync: false, timeline: true, claudeStatus: false, agyStatus: false, todoFile: false, layout: "expanded", model: true, effort: true, context: true, since: true, cache: true, github: true, dirty: true, sync: true, prs: true, stars: true, issues: true,
+export const DEFAULTS = { keepUpToDate: false, todos: true, todoLog: true, todoSync: false, timeline: true, todoFile: false, layout: "expanded", model: true, effort: true, context: true, since: true, cache: true, github: true, dirty: true, sync: true,
   subModel: true, subEffort: true, subContext: true, subTime: true,
-  usage: true, usageClaude: true, usageCodex: true, usageGemini: true, checkUpdates: true };
+  usage: true, usageClaude: true, usageCodex: true, usageGemini: true };
 // The To-do panel (over9k-todos) and the `todo` command agents use.
 const TODO_ITEMS = [
   ["todos", "To-do", "The To-do panel, and agents keeping each project's list: the rule in CLAUDE.md and AGENTS.md, the todo command (~/.local/bin) and Claude Code's note on each message. Log and Sync are switched per project in the panel's header"],
 ];
-// The mods folder as the shell scripts below get it ($3): forward slashes, which
-// sh and Python take on Windows too.
-const MODS = () => `${appHome().replace(/\\/g, "/")}/mods`;
-// What the switches set up outside Herdr (the to-do rule, command and hook,
-// the Log / Sync defaults):
-// setup.sh, next to this file, which install.sh runs too.
-const SETUP = () => `${MODS()}/over9k-options/setup.sh`;
 // Each [key, label, a note under it]; the sample above shows what each looks like.
 const AGENT_ITEMS = [
   ["model", "Model"],
   ["effort", "Effort"],
   ["context", "Context used"],
   ["since", "Time since last reply"],
-  ["cache", "Expired cache", "Click it to start fresh from a short recap"],
+  ["cache", "Expired cache"],
 ];
 // What a Claude subagent's row shows after its task (under its agent).
 const SUB_ITEMS = [
@@ -41,7 +34,7 @@ const SUB_ITEMS = [
   ["subTime", "Running for"],
 ];
 // Options' pages (the navigator on the left).
-const PAGES = [["folders", "Folders"], ["spaces", "Space rows"], ["agents", "Agent rows"], ["subs", "Subagent rows"], ["usage", "Usage"], ["todos", "To-do"], ["timeline", "Timeline"], ["claude", "Session footers"]];
+const PAGES = [["folders", "Folders"], ["spaces", "Space rows"], ["agents", "Agent rows"], ["subs", "Subagent rows"], ["usage", "Usage"], ["todos", "To-do"], ["timeline", "Timeline"]];
 // The usage section above Settings (over9k-usage): whether it shows, and which services.
 const USAGE_ITEMS = [
   ["usage", "Show usage", "Limits per service, above Settings"],
@@ -49,25 +42,6 @@ const USAGE_ITEMS = [
   ["usageCodex", "Codex", "From Codex's latest session"],
   ["usageGemini", "Gemini", "Includes 3rd-party (Claude, GPT) limits. Needs Antigravity's session footer."],
 ];
-// over9k's handoff.sh as over9k installs it (relative to home): agents run it
-// by that path, so it lives outside the mod. Its --rule on|off writes or removes
-// the marked hand-off block in ~/.claude/CLAUDE.md, ~/.codex/AGENTS.md and
-// ~/.pi/agent/AGENTS.md; only the switch below (or changing a folder while it's
-// on) runs it.
-const HANDOFF_SCRIPT = ".local/share/over9k/handoff.sh";
-// What Hand off project work does (on this computer or another).
-const HANDOFF = "Chats outside a project pass project work to a new agent in it. Adds a rule to CLAUDE.md and AGENTS.md";
-// Update ($1 the clone Over9k was installed from, $2 its branch, $3 Herdr's
-// home): pull only if it's a fast-forward (local changes stop it, and say so),
-// then install.sh again. Settings, lists and Claude Code's settings stay as
-// they are; Herdr reloads the mods as they land.
-const UPDATE = `{
-  cd "$1" || exit 1
-  b=$(git symbolic-ref --short -q HEAD)
-  [ "$b" = "$2" ] || { echo "$1 is on \${b:-no branch}, not $2. Switch it back to $2, or update it yourself."; exit 1; }
-  export GIT_TERMINAL_PROMPT=0 GIT_SSH_COMMAND="\${GIT_SSH_COMMAND:-ssh -o BatchMode=yes -o ConnectTimeout=10}"
-  git pull -q --no-rebase --ff-only origin "$2" && sh ./install.sh --yes --no-claude --home "$3"
-} 2>&1`;
 // The setup's wider scan (as the + menu's): git repos up to two levels under
 // home, and folders Claude Code has worked in.
 const MORE = `{
@@ -80,17 +54,14 @@ const MORE = `{
 
 // Over9k on GitHub, where the title bar's Star on GitHub goes.
 const REPO = "https://github.com/herunan/herdr-over9k";
-// Each a button on the row: what clicking it does, under its name. Git's from
-// the repo itself; GitHub's from GitHub (gh), every 5 minutes.
+// Each a button on the row: what clicking it does, under its name. All from
+// the repo itself (the GitHub link from its remote).
 const SPACE_ITEMS = [
   ["dirty", "Uncommitted files", "Opens Changes"],
-  ["sync", "Commits to push or pull", "Click to push (twice) or pull"],
+  ["sync", "Commits to push or pull", "Click twice to push or pull"],
 ];
 const GITHUB_ITEMS = [
   ["github", "GitHub link", "Opens the repo"],
-  ["prs", "Pull requests", "Red if your review is wanted"],
-  ["issues", "Open issues", "On your repos; opens them"],
-  ["stars", "Stars", "On your repos; opens who starred it"],
 ];
 
 export default class SidebarOptions extends View {
@@ -99,62 +70,24 @@ export default class SidebarOptions extends View {
     this.handle.focus();
     this.tab = "options";
     this.page = "folders"; // Options' page (PAGES)
-    this.claude = {}; // what ~/.claude/settings.json has of Over9k's (readClaude)
-    this.readClaude();
-    cx.timer.every(500, (cx) => { if (this.dirty) { this.dirty = false; cx.notify(); } });
     this.topic = 0; // Help's page (helpTopics)
     this.setup = Boolean(props()?.setup); // setup mode: over9k's first run, or Run setup again
     this.tip = null; // the samples' hover text ("agent:…" while on the agent sample)
     this.armed = false; // the sample ↑ clicked once
+    this.armedPull = false; // the sample ↓ clicked once
     this.computer = null; // whose folders show: null for this one, else a machine's name
     this.editing = null; // another computer's folder being typed: { key, input }
   }
 
-  // Which of Over9k's Claude Code pieces are really set up (the switches show
-  // that, not just the last click): the to-do hook.
-  readClaude() {
-    readTextFile(`${home()}/.claude/settings.json`).then((text) => {
-      let j = {};
-      try { j = JSON.parse(text ?? "{}"); } catch {}
-      const cmds = (ev) => (j.hooks?.[ev] ?? []).flatMap((h) => h.hooks ?? []).map((h) => h.command ?? "");
-      this.claude = {
-        todoHook: cmds("UserPromptSubmit").some((c) => c.includes("todo-hook.sh")),
-        claudeStatus: /over9k[^/"]*\/claude-statusline\.sh/.test(j.statusLine?.command ?? ""),
-        agyStatus: this.claude?.agyStatus ?? false,
-      };
-      this.dirty = true;
-    }).catch(() => null);
-    // Antigravity's (its own settings.json): whether its status line is Over9k's.
-    readTextFile(`${home()}/.gemini/antigravity-cli/settings.json`).then((text) => {
-      this.agyHere = text != null;
-      let j = {};
-      try { j = JSON.parse(text ?? "{}"); } catch {}
-      this.claude = { ...this.claude, agyStatus: /agy-statusline\.sh/.test(j.statusLine?.command ?? "") };
-      this.dirty = true;
-    }).catch(() => null);
-  }
-
+  // Переключатели только сохраняют настройку: setup.sh, писавший в ~/.claude,
+  // ~/.gemini и ~/.local, убран вместе с вызовами.
   set(key, value) {
     setShared("sidebar.options", { ...DEFAULTS, ...(shared("sidebar.options") ?? {}), [key]: value });
-    // The rule lives in each agent's own instructions file: handoff.sh puts it in or takes it out.
-    const o = { ...DEFAULTS, ...(shared("sidebar.options") ?? {}) };
-    // The rule goes into CLAUDE.md and AGENTS.md (over9k's handoff.sh); it names
-    // the folders, so it's written again when one changes while it's on.
-    const on = o[key] ? "on" : "off";
-    const args = { todos: ["todo", on, MODS()], todoLog: ["default", "log", on], todoSync: ["default", "sync", on],
-      claudeStatus: ["status", on, MODS()], agyStatus: ["agy", on, MODS()] }[key];
-    if (args) exec("sh", [SETUP(), ...args]).then((r) => {
-      if (r?.code === 4) notify({ title: "Over9k needs jq", body: "Install jq (jqlang.org) for this switch, then try again.", level: "warning" });
-      this.readClaude();
-    }).catch(() => null);
-    if (key === "handoffRule" || (key === "locations" && o.handoffRule))
-      exec("sh", ["-c", '[ -f "$HOME/$2" ] && sh "$HOME/$2" --rule "$1"', "sh", o.handoffRule ? "on" : "off", HANDOFF_SCRIPT]).catch(() => null);
   }
 
   // One page (PAGES): a heading and a line on what it's for, then its settings.
   // Setup mode: Folders, then the spaces to pin.
   options(t, o, cx) {
-    o = { ...o, ...this.claude }; // the Claude Code switches show what's set up
     const group = (title, about, first) => v_flex().flex_none().pt(first ? 0 : 24).pb(10).gap(3)
       .child(div().text_size(16).font_semibold().text_color(t.foreground).child(title))
       .when(Boolean(about), (el) => el.child(div().text_size(12).text_color(t.dim).child(about ?? "")));
@@ -218,9 +151,6 @@ export default class SidebarOptions extends View {
       .child(place("chats", "Chats"))
       .child(place("projects", "Projects"))
       .when(!m, (el) => el.child(check(["keepUpToDate", "Add new projects automatically", "Off: add them from + \u203a Add spaces"])))
-      .child(m ? this.remoteHandoff(t, o, m) : check(["handoffRule", "Hand off project work", HANDOFF]))
-      // The footer's look for a newer Over9k (the Update chip, the notice above).
-      .when(!m && !this.setup, (el) => el.child(group("Updates", null)).child(check(["checkUpdates", "Check for updates", "Every few hours, from the folder you installed from"])))
       // Setup mode: the spaces to pin, then Done (the view settings stay in Options).
       .when(Boolean(this.setup), (el) => el.child(this.spacesGroup(t, group, cx)));
   }
@@ -272,20 +202,13 @@ export default class SidebarOptions extends View {
 
   // Space rows, Agent rows or Subagent rows: heading, sample, then what it shows.
   viewPage(t, o, group, check, choice) {
-    // A note that some of a page's details need an agent's footer, with a link to
-    // the Session footers page (and from there back to the pages they fill).
-    const goTo = (id, page, label) => h_flex().id(id).flex_none().gap(3).items_center().cursor_pointer().text_color(t.accent)
-      .hover((s) => s.text_color(t.foreground)).on_click((_e, cx) => { this.page = page; cx.notify(); })
-      .child(label).child(svg("mods/workspace-chrome/chevron-right.svg").size(10));
-    const needs = (id, text, page = "claude", label = "Session footers") => h_flex().flex_none().flex_wrap().pt(10).gap_x(6).gap_y(2).items_center()
-      .text_size(11.5).text_color(t.dim).child(text).child(goTo(`link-${id}`, page, label));
     const page = v_flex().flex_none();
     if (this.page === "spaces") return page
       .child(group("Space rows", "Shown next to the name. All clickable.", true))
       .child(this.sample(t, this.spaceSample(t, o)))
       .child(group("Git", "From the repo on this computer.", false))
       .children(SPACE_ITEMS.map(check))
-      .child(group("GitHub", "For repos on GitHub. Counts need gh, signed in; checked every 5 minutes.", false))
+      .child(group("GitHub", "For repos on GitHub.", false))
       .children(GITHUB_ITEMS.map(check));
     if (this.page === "agents") return page
       .child(group("Agent rows", "Compact: one line. Expanded: details below the name (always, in Agents \u203a Status).", true))
@@ -293,21 +216,13 @@ export default class SidebarOptions extends View {
         .child(choice("compact", "Compact", o.layout === "compact"))
         .child(choice("expanded", "Expanded", o.layout === "expanded")))
       .child(this.sample(t, this.agentSample(t, o)))
-      .children(AGENT_ITEMS.map(check))
-      .child(needs("agents", "Antigravity's context needs its session footer."));
+      .children(AGENT_ITEMS.map(check));
     if (this.page === "usage") return page
       .child(group("Usage", "Each service's 5-hour and weekly limits. Green, yellow from 50%, red from 80%. Click a row for every limit, and a limit to make it that row's headline.", true))
-      .children(USAGE_ITEMS.map(check))
-      .child(needs("usage", "Claude's and Gemini's limits need their session footer."));
+      .children(USAGE_ITEMS.map(check));
     if (this.page === "timeline") return page
       .child(group("Timeline", "Your prompts in the agent you're in, in the right panel: what it did, how long it worked, when it finished, tokens.", true))
       .child(check(["timeline", "Timeline", "On: the Timeline button and panel. Off: both hidden"]));
-    if (this.page === "claude") return page
-      .child(group("Session footers", "The line under an agent's prompt. Agent rows, subagent rows and Usage read each agent directly: its files, or the session footer it already shows. Some details only reach a session footer, so those agents need Over9k's.", true))
-      .child(check(["claudeStatus", "Claude Code", "Needed for Claude's 5-hour and weekly limits (or API spend) in Usage."]))
-      .child(check(["agyStatus", "Antigravity", this.agyHere === false ? "Antigravity isn't installed on this computer." : "Needed for the agent's context in Agent rows, and Gemini's limits in Usage."]))
-      .child(h_flex().flex_none().pt(4).gap(14).child(goTo("link-f-agents", "agents", "Agent rows")).child(goTo("link-f-usage", "usage", "Usage")))
-      .child(div().pt(8).text_size(11).text_color(t.dim).child("Codex and Pi need none. While one is on, it shows instead of any session footer you set up yourself; yours comes back when it's off. Applies to agents you start next."));
     if (this.page === "todos") return page
       .child(group("To-do", "Each project's list, in the right panel. Agents add to it and tick it too.", true))
       .child(check(TODO_ITEMS[0]))
@@ -320,24 +235,10 @@ export default class SidebarOptions extends View {
       .children(SUB_ITEMS.map(check));
   }
 
-  // Another computer's Automatic hand off: kept with its folders; over9k installs
-  // its helper there (or removes it) and writes the rule into its CLAUDE.md/AGENTS.md.
-  remoteHandoff(t, o, m) {
-    const on = Boolean(o.computers?.[m]?.handoffRule);
-    return h_flex().id(`handoff-${m}`).min_h(30).py(5).px(4).gap(10).items_center().rounded(7).cursor_pointer()
-      .hover((s) => s.bg(t.hover))
-      .on_click(() => this.set("computers", { ...(o.computers ?? {}), [m]: { ...(o.computers?.[m] ?? {}), handoffRule: !on } }))
-      .child(h_flex().size(16).flex_none().rounded(4).items_center().justify_center()
-        .border_1().border_color(on ? t.accent : t.input).bg(on ? t.accent : t.background)
-        .when(on, (el) => el.child(svg("mods/workspace-chrome/check.svg").size(11).text_color(t.accent_foreground))))
-      .child(v_flex().flex_1().min_w(0).child(div().text_color(t.foreground).child("Hand off project work"))
-        .child(div().text_size(11).text_color(t.dim).child(HANDOFF)));
-  }
-
   // A made-up row drawn like the sidebar's (same sizes and gaps), showing what
   // the switches do: off parts are hidden, as there. Hovering and clicking act
-  // as there too (hover text on the right, the push button asking twice, the ×,
-  // "clear + recap"), only nothing really happens.
+  // as there too (hover text on the right, push and pull asking twice, the ×),
+  // only nothing really happens.
   sample(t, row) {
     return v_flex().flex_none().mb(6).rounded(8).bg(t.chrome).border_1().border_color(t.border).text_size(13).child(row);
   }
@@ -364,10 +265,9 @@ export default class SidebarOptions extends View {
             .child(this.part(t, "ahead", div().px(2).text_color(t.ansi2).when(this.armed, (e) => e.bg(t.hover)).child("\u21912"),
               this.armed ? "Click again to push" : "Push 2 commits",
               () => { this.armed = !this.armed; return this.armed ? "Click again to push" : "Pushed 2 commits"; }))
-            .child(this.part(t, "behind", div().px(2).text_color(t.ansi1).child("\u21931"), "Pull 1 new commit")))
-          .when(o.prs, (el) => el.child(this.part(t, "prs", h_flex().px(2).gap(2).items_center().text_color(t.dim).child(svg("mods/over9k/pull-request.svg").size(11)).child("3"), "Open 3 pull requests")))
-          .when(o.issues, (el) => el.child(this.part(t, "issues", h_flex().px(2).gap(2).items_center().text_color(t.dim).child(svg("mods/over9k/issue.svg").size(11)).child("2"), "Open 2 issues")))
-          .when(o.stars, (el) => el.child(this.part(t, "stars", h_flex().px(2).gap(2).items_center().text_color(t.dim).child(svg("mods/over9k/star.svg").size(11)).child("8"), "8 stars on GitHub"))))
+            .child(this.part(t, "behind", div().px(2).text_color(t.ansi1).when(this.armedPull, (e) => e.bg(t.hover)).child("\u21931"),
+              this.armedPull ? "Click again to pull" : "Pull 1 new commit",
+              () => { this.armedPull = !this.armedPull; return this.armedPull ? "Click again to pull" : "Pulled 1 new commit"; }))))
         // As there: the fold chevron and (FOLD), the hover text or folder, the + (ADD).
         .child(h_flex().w(16).flex_none().items_center().justify_center().text_color(t.dim)
           .child(svg("mods/workspace-chrome/chevron-down.svg").size(10).opacity(on ? 1 : 0)))
@@ -384,7 +284,7 @@ export default class SidebarOptions extends View {
   // `subs`: the agent with two subagents, for Subagent rows.
   agentSample(t, o, subs = false) {
     const compact = o.layout === "compact";
-    const hover = this.tip === "agent:row" || this.tip === "agent:exp";
+    const hover = this.tip === "agent:row";
     const dotted = (parts) => parts.flatMap((el, n) => (n ? [div().px(1).child("\u00b7"), el] : [el]));
     const info = h_flex().flex_none().items_center().text_size(11).text_color(t.dim)
       .children(dotted([
@@ -393,9 +293,7 @@ export default class SidebarOptions extends View {
         o.context && div().text_color(t.ansi2).child("42%"),
         o.since && div().child("3m"),
       ].filter(Boolean)))
-      .when(o.cache, (el) => el.child(div().id("sample-exp").ml(4).px(2).rounded(4).text_color(t.ansi1).hover((s) => s.bg(t.hover))
-        .on_hover((on, cx) => { this.tip = on ? "agent:exp" : "agent:row"; cx.notify(); })
-        .child(this.tip === "agent:exp" ? "clear + recap" : "exp.")));
+      .when(o.cache, (el) => el.child(div().ml(4).px(2).text_color(t.ansi1).child("exp.")));
     const link = "#8b7cf6", fg = t.foreground, wash = (a) => (/^#[0-9a-f]{6}$/i.test(fg) ? fg + a : t.raised);
     const chips = h_flex().flex_none().gap(5).items_center()
       .child(h_flex().h(16).px(4).gap(3).items_center().rounded(4).bg(link + "26").text_size(10.5).text_color(link)
@@ -407,7 +305,7 @@ export default class SidebarOptions extends View {
         .child(svg("mods/workspace-chrome/chevron-down.svg").size(8)));
     const name = div().min_w(0).truncate().text_size(12.5).text_color(t.foreground).when(!compact, (el) => el.line_height("15px")).child("Fix the login bug");
     const agent = h_flex().id("sample-agent").h(compact ? 26 : 36).pl(4).pr(8).gap(8).items_center().rounded(7).hover((s) => s.bg(t.hover))
-      .on_hover((on, cx) => { if (on) this.tip = this.tip === "agent:exp" ? this.tip : "agent:row"; else if (this.tip?.startsWith("agent:")) this.tip = null; cx.notify(); })
+      .on_hover((on, cx) => { if (on) this.tip = "agent:row"; else if (this.tip?.startsWith("agent:")) this.tip = null; cx.notify(); })
       .child(h_flex().flex_none().gap(4).items_center()
         .child(h_flex().w(16).flex_none().justify_center()
           .when(hover, (el) => el.child(h_flex().size(16).items_center().justify_center().rounded(4).text_color(t.dim).hover((s) => s.bg(t.hover).text_color(t.foreground))
@@ -484,45 +382,6 @@ export default class SidebarOptions extends View {
     return { ...DEFAULTS, ...(shared("sidebar.options") ?? {}) };
   }
 
-  // A newer Over9k where it was installed from (the footer looks: shared
-  // "over9k.update"): how many changes, what they are (each commit's subject,
-  // newest first), and Update. A failed update shows why here.
-  updateCard(t) {
-    const u = shared("over9k.update") ?? {};
-    const log = (u.log ?? []).slice(0, 8), more = u.behind - log.length;
-    const lines = (this.updateError ?? "").split("\n").filter(Boolean).slice(-8);
-    return v_flex().id("update").flex_none().mt(14).p(12).gap(4).rounded(8).border_1().border_color(t.accent + "66").bg(t.accent + "14")
-      .child(h_flex().gap(10).pb(2).items_center()
-        .child(div().flex_1().min_w(0).font_semibold().child(`Update available \u00b7 ${u.behind} change${u.behind === 1 ? "" : "s"}`))
-        .child(h_flex().id("update-now").h(26).px(12).flex_none().rounded(7).items_center().bg(t.solid).text_color(t.solid_foreground)
-          .when(!this.updating, (el) => el.cursor_pointer().hover((s) => s.opacity(0.88)).on_click((_e, cx) => this.update(u, cx)))
-          .when(Boolean(this.updating), (el) => el.opacity(0.7))
-          .child(this.updating ? "Updating\u2026" : "Update")))
-      .children(log.map((s, i) => h_flex().id(`update-${i}`).gap(7).text_size(12).text_color(t.muted)
-        .child(div().flex_none().text_color(t.dim).child("\u2022")).child(div().flex_1().min_w(0).truncate().child(s))))
-      .when(more > 0, (el) => el.child(div().pl(14).text_size(11.5).text_color(t.dim).child(`and ${more} more`)))
-      .when(lines.length > 0, (el) => el.child(v_flex().mt(6).p(8).rounded(6).bg(t.background).text_size(11.5).text_color(t.ansi1)
-        .child(div().text_color(t.foreground).child("Couldn't update:"))
-        .children(lines.map((l) => div().child(l)))));
-  }
-
-  // Pulls and installs the newer Over9k (UPDATE). Herdr reloads the mods as
-  // they land, this one too, so the shared state and the note go first.
-  update(u, cx) {
-    this.updating = true;
-    this.updateError = null;
-    cx.notify();
-    cx.spawn(async (cx) => {
-      const r = await exec("sh", ["-c", UPDATE, "sh", u.path, u.branch, appHome()]).catch((e) => ({ code: 1, stdout: String(e) }));
-      if (r?.code === 0) {
-        setShared("over9k.update", { behind: 0, checked: Date.now() });
-        notify({ title: "Over9k updated", body: "Already running: no restart needed.", level: "success" });
-      } else this.updateError = (r?.stdout || r?.stderr || "").trim() || "It stopped without saying why.";
-      this.updating = false;
-      cx.notify();
-    });
-  }
-
   render(cx) {
     const t = theme();
     const o = { ...DEFAULTS, ...(shared("sidebar.options") ?? {}) };
@@ -541,8 +400,6 @@ export default class SidebarOptions extends View {
           .on_click((_e, cx) => cx.open_url(REPO))
           .child(svg("mods/over9k-options/star.svg").size(12).flex_none()).child("Star on GitHub")))
         .child(div().text_size(11).text_color(t.dim).child("Esc")))
-      // A newer Over9k (not in setup): above Options and Help alike.
-      .when(!this.setup && o.checkUpdates && shared("over9k.update")?.behind > 0, (el) => el.child(this.updateCard(t)))
       // The navigator (not in setup), then the page, which scrolls when it's long.
       .child(h_flex().flex_1().min_h(0).pt(14).gap(18).items_start()
         .when(!this.setup, (el) => el.child(this.nav(t)))
