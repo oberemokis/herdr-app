@@ -17,6 +17,8 @@
 
 Подвала с Settings и Add machine в сайдбаре нет: настройки Herdr открывает `cmd-,`, настройки over9k `cmd-alt-,`, машины добавляются в Settings → Machines.
 
+Тема `opencode` (тёмная) и `opencode-light` (светлая) в `themes/`: палитра темы по умолчанию из [OpenCode](https://github.com/anomalyco/opencode) (`packages/tui/src/theme/assets/opencode.json`, MIT), разложенная по цветам Herdr. Раскладка берёт ту, что соответствует режиму системы. Выбор в меню тем Herdr её перекрывает.
+
 Углы везде прямые: у карточек терминалов радиус 0 в раскладке, а каждый мод при старте обнуляет скругление своих элементов (`square.js`). Скругления Herdr остаются у его собственных окон: меню, диалогов, уведомлений, окна Settings.
 
 Базовая ветка для Review и Graph задана в `layouts/workbench.json` (`"base": "dev"`). Для другого проекта поменяй её там.

@@ -40,13 +40,17 @@ for mod in "${mods[@]}"; do
 done
 
 say "Резервная копия: $BACKUP"
-run mkdir -p "$BACKUP/mods" "$BACKUP/layouts"
+run mkdir -p "$BACKUP/mods" "$BACKUP/layouts" "$BACKUP/themes"
 for mod in "${mods[@]}"; do
   if [ -d "$HOME_DIR/mods/$mod" ]; then run cp -R "$HOME_DIR/mods/$mod" "$BACKUP/mods/"; fi
 done
 for layout in "$REPO"/layouts/*.json; do
   name=$(basename "$layout")
   if [ -f "$HOME_DIR/layouts/$name" ]; then run cp "$HOME_DIR/layouts/$name" "$BACKUP/layouts/"; fi
+done
+for theme in "$REPO"/themes/*.json; do
+  name=$(basename "$theme")
+  if [ -f "$HOME_DIR/themes/$name" ]; then run cp "$HOME_DIR/themes/$name" "$BACKUP/themes/"; fi
 done
 if [ -f "$HOME_DIR/keys.json" ]; then run cp "$HOME_DIR/keys.json" "$BACKUP/"; fi
 
@@ -56,6 +60,14 @@ for mod in "${mods[@]}"; do
   # cache/ better-files и файлы, которые Herdr пишет сам, не удаляются и не перезаписываются.
   run rsync -a --delete --exclude cache/ --exclude gpui-kit.d.ts --exclude jsconfig.json \
     "$REPO/mods/$mod/" "$HOME_DIR/mods/$mod/"
+done
+
+# Темы раньше раскладок: раскладку с ещё не существующей темой Herdr не применяет.
+say "Темы:"
+run mkdir -p "$HOME_DIR/themes"
+for theme in "$REPO"/themes/*.json; do
+  say "  $(basename "$theme")"
+  run cp "$theme" "$HOME_DIR/themes/"
 done
 
 say "Раскладки:"

@@ -5,6 +5,10 @@
     "name": "main",
     "version": "0.1.15"
   },
+  "theme": {
+    "light": "opencode-light",
+    "dark": "opencode"
+  },
   "titlebar": "none",
   "traffic_lights": [
     12,
