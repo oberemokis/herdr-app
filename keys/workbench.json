@@ -1,0 +1,15 @@
+{
+  "layout:workbench": {
+    "ctrl-tab": "over9k.switcher",
+    "cmd-shift-x": "over9k.close-pane",
+    "cmd-alt-1": "workbench-tabs.files",
+    "cmd-alt-2": "workbench-tabs.changes",
+    "cmd-alt-3": "workbench-tabs.review",
+    "cmd-alt-4": "workbench-tabs.gitlab",
+    "cmd-alt-5": "workbench-tabs.graph"
+  },
+  "mod:over9k-switcher": {
+    "ctrl-tab": "over9k-switcher.next",
+    "ctrl-shift-tab": "over9k-switcher.prev"
+  }
+}

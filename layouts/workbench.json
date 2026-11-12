@@ -1,6 +1,10 @@
 {
   "id": "root",
   "type": "row",
+  "cloned_from": {
+    "name": "main",
+    "version": "0.1.15"
+  },
   "titlebar": "none",
   "traffic_lights": [
     12,
@@ -39,32 +43,25 @@
           }
         },
         {
-          "id": "sidebar-lists",
-          "type": "column",
-          "children": [
-            {
-              "id": "spaces",
-              "type": "block",
-              "size": {
-                "weight": 1
-              },
-              "min": 90,
-              "content": {
-                "mod": "spaces"
-              }
-            },
-            {
-              "id": "agents",
-              "type": "block",
-              "size": {
-                "weight": 1
-              },
-              "min": 90,
-              "content": {
-                "mod": "agents"
-              }
-            }
-          ]
+          "id": "machine-vitals",
+          "type": "block",
+          "size": {
+            "px": 100
+          },
+          "content": {
+            "mod": "machine-vitals"
+          }
+        },
+        {
+          "id": "over9k",
+          "type": "block",
+          "size": {
+            "weight": 1
+          },
+          "min": 120,
+          "content": {
+            "mod": "over9k"
+          }
         },
         {
           "id": "sidebar-footer",
@@ -94,7 +91,16 @@
           },
           "window_drag": true,
           "content": {
-            "mod": "tabs"
+            "mod": "workbench-tabs",
+            "props": {
+              "panels": [
+                { "id": "files", "label": "Files", "icon": "mods/better-files/icons/file.svg" },
+                { "id": "changes", "label": "Changes", "icon": "mods/changes/changes.svg" },
+                { "id": "review", "label": "Review", "icon": "mods/reviewer/comment.svg" },
+                { "id": "gitlab", "label": "GitLab", "icon": "mods/gitlab/icons/gitlab.svg" },
+                { "id": "graph", "label": "Graph", "icon": "mods/git-graph/icons/graph.svg" }
+              ]
+            }
           }
         },
         {
@@ -140,7 +146,7 @@
                 "px": 368
               },
               "min": 280,
-              "max": 900,
+              "max": 1600,
               "children": [
                 {
                   "id": "panel-body",
@@ -151,14 +157,41 @@
                       "id": "files",
                       "type": "block",
                       "content": {
-                        "mod": "files"
+                        "mod": "better-files"
                       }
                     },
                     {
                       "id": "changes",
                       "type": "block",
                       "content": {
-                        "mod": "changes"
+                        "mod": "better-changes"
+                      }
+                    },
+                    {
+                      "id": "review",
+                      "type": "block",
+                      "content": {
+                        "mod": "reviewer",
+                        "props": {
+                          "base": "dev"
+                        }
+                      }
+                    },
+                    {
+                      "id": "gitlab",
+                      "type": "block",
+                      "content": {
+                        "mod": "gitlab"
+                      }
+                    },
+                    {
+                      "id": "graph",
+                      "type": "block",
+                      "content": {
+                        "mod": "git-graph",
+                        "props": {
+                          "base": "dev"
+                        }
                       }
                     }
                   ]
