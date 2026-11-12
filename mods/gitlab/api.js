@@ -21,19 +21,27 @@ const MR = `fragment mr on MergeRequest {
   diffStatsSummary { additions deletions fileCount }
 }`;
 
-export const LIST_QUERY = `query($path: ID!, $branch: String!) {
+// Список читается двумя запросами: self-hosted GitLab ограничивает сложность одного запроса
+// (250 по умолчанию), а вместе MR, пайплайны со стадиями и задачи дают около 290.
+const LIST_MRS_QUERY = `query($path: ID!, $branch: String!) {
   currentUser { username todos(state: pending) { count } }
   project(fullPath: $path) {
     webUrl
     repository { rootRef }
     mergeRequests(state: opened, first: 20, sort: UPDATED_DESC) { count nodes { ...mr headPipeline { iid status detailedStatus { group } } } }
     branchMr: mergeRequests(sourceBranches: [$branch], first: 1, sort: CREATED_DESC) { nodes { ...mr headPipeline { ...pipeline } } }
+  }
+}
+${MR}
+${PIPELINE}`;
+
+const LIST_PIPELINES_QUERY = `query($path: ID!, $branch: String!) {
+  project(fullPath: $path) {
     branchPipelines: pipelines(ref: $branch, first: 1) { nodes { ...pipeline } }
     pipelines(first: 12) { nodes { ...pipeline } }
     issues(state: opened, first: 15, sort: UPDATED_DESC) { count nodes { iid title description webUrl updatedAt author { username } assignees { nodes { username } } labels { nodes { title color } } } }
   }
 }
-${MR}
 ${PIPELINE}`;
 
 const MR_QUERY = `query($path: ID!, $iid: String!) {
@@ -111,9 +119,10 @@ export async function locate({ cwd, on }) {
 }
 
 export async function loadList(ctx, branch) {
-  const data = await graphql(ctx, LIST_QUERY, { path: ctx.path, branch: branch ?? "" });
-  const p = data.project;
-  if (!p) return null;
+  const vars = { path: ctx.path, branch: branch ?? "" };
+  const [data, more] = await Promise.all([graphql(ctx, LIST_MRS_QUERY, vars), graphql(ctx, LIST_PIPELINES_QUERY, vars)]);
+  if (!data.project || !more.project) return null;
+  const p = { ...data.project, ...more.project };
   const branchMr = nodes(p.branchMr)[0] ?? null;
   return {
     web: p.webUrl,
