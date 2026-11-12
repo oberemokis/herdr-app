@@ -395,7 +395,7 @@ export default class GitLab extends View {
   // ── views ──────────────────────────────────────────────────────────────────
 
   refreshButton(t) {
-    return div().id("gl-refresh").size(22).flex_none().flex().items_center().justify_center().rounded(6).text_color(t.dim)
+    return div().id("gl-refresh").size(24).flex_none().flex().items_center().justify_center().rounded(6).text_color(t.dim)
       .cursor_pointer().hover((st) => st.bg(t.hover).text_color(t.foreground)).tooltip("Refresh")
       .on_click((_e, cx) => { this.refresh(cx); cx.notify(); })
       .child(this.loading ? svg(icon("running")).size(13).spin(900) : svg(icon("refresh")).size(14));
@@ -403,7 +403,7 @@ export default class GitLab extends View {
 
   listHeader(s, t) {
     const ready = Boolean(s?.mrs), projectMenu = this.rightClick((ctx) => menu.projectItems(ctx), {});
-    return h_flex().h(42).flex_none().px(14).gap(8).items_center().border_b(1).border_color(t.border)
+    return h_flex().h(32).flex_none().px(14).gap(8).items_center().border_b(1).border_color(t.border)
       .child(svg(icon("gitlab")).size(15).flex_none().text_color(BRAND))
       .child(div().id("gl-project").flex_1().min_w(0).truncate().font_semibold()
         .when(Boolean(s?.host), (el) => el.cursor_pointer().hover((st) => st.text_color(t.accent)).tooltip("Project links")
@@ -435,8 +435,8 @@ export default class GitLab extends View {
   }
 
   detailHeader(t, title, extra) {
-    return h_flex().h(42).flex_none().pl(8).pr(10).gap(6).items_center().border_b(1).border_color(t.border)
-      .child(iconButton("gl-back", "back", "Back (Esc)", (cx) => this.back(cx), t, 26))
+    return h_flex().h(32).flex_none().px(14).gap(8).items_center().border_b(1).border_color(t.border)
+      .child(iconButton("gl-back", "back", "Back (Esc)", (cx) => this.back(cx), t, 24))
       .child(title)
       .child(this.refreshButton(t))
       .when(Boolean(extra), (el) => el.child(extra));

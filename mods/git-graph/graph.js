@@ -489,7 +489,8 @@ export class Graph {
   // Where the description column ends: labels past it are clipped, so not clickable.
   labelLimit() {
     if (!this.width) return Infinity;
-    return this.width - 2 - 10 - this.trailing().reduce((n, k) => n + this.cols[k] + LABEL.GAP, 0);
+    // 14: правый отступ строки (pr), сведён к отступу шапки.
+    return this.width - 2 - 14 - this.trailing().reduce((n, k) => n + this.cols[k] + LABEL.GAP, 0);
   }
   // Pointer positions come in window units; layout sizes are these units times the zoom.
   unit() { return this.scale ?? settings().zoom ?? 1; }
@@ -632,7 +633,7 @@ export class Graph {
     const commit = this.commits[i], row = this.rows[i], color = colors[row.lane % colors.length];
     // Merge commits are muted, as Git Graph does by default.
     const fg = commit.uncommitted ? t.muted : commit.parents.length > 1 ? t.dim : t.foreground;
-    return h_flex().id(`c-${commit.hash}`).w_full().h(this.rowH()).flex_none().pr(10).gap(LABEL.GAP).items_center().overflow_hidden()
+    return h_flex().id(`c-${commit.hash}`).w_full().h(this.rowH()).flex_none().pr(14).gap(LABEL.GAP).items_center().overflow_hidden()
       .when(commit.head, (e) => e.bg(color + "14")).when(this.selected === commit.hash, (e) => e.bg(t.selected)).hover((s) => s.bg(t.hover))
       .child(this.graphCell(row, commit, colors, t, width))
       // Labels and description clip together, so many labels never push the fixed columns out.
@@ -645,11 +646,13 @@ export class Graph {
         .child(div().w(this.cols.hash).flex_none().font_family(mono).text_size(11).text_color(t.dim).child(commit.uncommitted ? "*" : commit.hash.slice(0, 8))));
   }
 
+  // Без подписи кнопка квадратная 24 × 24, с подписью отступы как у прочих кнопок шапок.
   iconButton(id, glyph, tip, active, action, t) {
-    return h_flex().id(id).h(24).px(6).gap(5).flex_none().items_center().rounded(6).text_size(11.5).cursor_pointer()
+    return h_flex().id(id).h(24).when(Boolean(tip), (e) => e.px(8).gap(6)).when(!tip, (e) => e.w(24).justify_center())
+      .flex_none().items_center().rounded(6).text_size(11.5).cursor_pointer()
       .text_color(active ? t.foreground : t.muted).when(active, (e) => e.bg(t.selected)).hover((s) => s.bg(t.hover).text_color(t.foreground))
       .on_mouse_down("left", (_e, cx) => cx.stop_propagation()).on_click(action)
-      .child(svg(icon(glyph)).size(13).flex_none()).when(Boolean(tip), (e) => e.child(tip));
+      .child(svg(icon(glyph)).size(14).flex_none()).when(Boolean(tip), (e) => e.child(tip));
   }
 
   header(t) {
@@ -659,7 +662,7 @@ export class Graph {
     // drops the same rows down over the graph to switch to another.
     const repo = ws && this.opened ? ws.repos.find((r) => r.path === this.opened) : null;
     const settingsShown = this.state === "workspace" || (this.state === "norepo" && !this.skipped);
-    return h_flex().h(42).flex_none().px(14).gap(8).items_center().border_b(1).border_color(t.border)
+    return h_flex().h(32).flex_none().px(14).gap(8).items_center().border_b(1).border_color(t.border)
       .when(!repo, (e) => e.child(div().text_size(13).font_semibold().child(ws ? "Manygit" : "Git")))
       .when(Boolean(repo), (e) => e
         .child(h_flex().id("graph-back").h(24).pl(2).pr(6).gap(3).flex_none().items_center().rounded(6).cursor_pointer()
@@ -673,7 +676,7 @@ export class Graph {
       .when(this.state === "workspace", (e) => e.child(div().flex_none().text_size(11.5).text_color(t.dim).child(count(ws.repos.length, "repo"))))
       .child(div().flex_1())
       // A newer release: a dot, and the update window on click.
-      .when(Boolean(available()), (e) => e.child(h_flex().id("graph-update").h(24).px(7).gap(5).flex_none().items_center().rounded(6).text_size(11.5)
+      .when(Boolean(available()), (e) => e.child(h_flex().id("graph-update").h(24).px(8).gap(6).flex_none().items_center().rounded(6).text_size(11.5)
         .cursor_pointer().text_color(t.accent).hover((s) => s.bg(t.hover)).on_mouse_down("left", (_e, cx) => cx.stop_propagation())
         .on_click(() => openUpdate()).child(div().size(6).rounded(3).bg(t.accent)).child("Update Graph")))
       .when(ready && this.remoteNames?.length > 0, (e) => e.child(this.iconButton("graph-fetch", "fetch", this.fetching ? "Fetching…" : null, false, (_e, cx) => this.fetch(cx), t)))
@@ -763,11 +766,11 @@ export class Graph {
     const segment = (id, text, on, action) => div().id(id).h(22).px(9).flex().items_center().rounded(5).text_size(11.5).cursor_pointer()
       .bg(on ? t.raised : t.background).text_color(on ? t.foreground : t.muted).when(on, (e) => e.border_1().border_color(t.border))
       .hover((s) => s.text_color(t.foreground)).on_click(action).child(text);
-    return h_flex().h(34).flex_none().px(10).gap(8).items_center().border_b(1).border_color(t.border)
+    return h_flex().h(34).flex_none().px(14).gap(8).items_center().border_b(1).border_color(t.border)
       .child(h_flex().p(2).gap(2).rounded(7).bg(t.background).border_1().border_color(t.border)
         .child(segment("graph-all", "All branches", this.all, (_e, cx) => this.setScope(true, cx)))
         .child(segment("graph-current", "Current", !this.all, (_e, cx) => this.setScope(false, cx))))
-      .child(h_flex().id("graph-remotes").h(24).px(6).gap(6).items_center().rounded(6).cursor_pointer().text_size(11.5).text_color(t.muted)
+      .child(h_flex().id("graph-remotes").h(24).px(8).gap(6).items_center().rounded(6).cursor_pointer().text_size(11.5).text_color(t.muted)
         .hover((s) => s.bg(t.hover).text_color(t.foreground)).on_click((_e, cx) => this.setRemotes(cx))
         .child(div().size(13).rounded(3).border_1().border_color(this.remotes ? t.accent : t.input).when(this.remotes, (e) => e.bg(t.accent)).flex().items_center().justify_center()
           .when(this.remotes, (e) => e.child(svg(icon("check")).size(10).text_color(t.accent_foreground))))
@@ -782,7 +785,7 @@ export class Graph {
       .on_mouse_down("left", (e, cx) => this.startDrag(key, e, cx))
       .child(div().w(1).h_full().when(this.drag?.key === key, (e) => e.bg(t.accent)))
       .hover((s) => s.bg(t.border));
-    return h_flex().h(24).flex_none().pr(10).items_center().border_b(1).border_color(t.border).text_size(11).text_color(t.dim)
+    return h_flex().h(24).flex_none().pr(14).items_center().border_b(1).border_color(t.border).text_size(11).text_color(t.dim)
       .child(head("Graph", width).pl(PAD)).child(handle("graph")).child(div().flex_1().min_w(0).child("Description"))
       .children(this.trailing().flatMap((k) => [handle(k), head(titles[k], this.cols[k]).when(k === "date", (e) => e.text_right())]));
   }
@@ -817,7 +820,7 @@ export class Graph {
     const grip = div().id("graph-details-grip").h(6).w_full().flex_none().border_t(1).border_color(t.border).cursor_row_resize()
       .on_mouse_down("left", (e, cx) => this.startDetailDrag(e, cx))
       .hover((s) => s.bg(t.accent));
-    const top = h_flex().h(32).flex_none().px(10).gap(6).items_center().border_b(1).border_color(t.border).text_size(11.5);
+    const top = h_flex().h(32).flex_none().px(14).gap(8).items_center().border_b(1).border_color(t.border).text_size(11.5);
     const close = div().id("graph-details-close").px(6).py(1).rounded(4).text_color(t.dim).cursor_pointer().hover((s) => s.bg(t.hover).text_color(t.foreground))
       .on_click((_e, cx) => { this.selected = null; this.details = null; this.diff = null; cx.notify(); }).child("×");
     if (this.diff) {

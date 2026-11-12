@@ -673,8 +673,8 @@ export default class Changes extends View {
     // Every press inside the box stops here: the box floats over the list, and a click that
     // fell through to the row underneath would reopen the box the moment Add closed it.
     const stop = (action) => (e, cx) => { cx.stop_propagation(); action(e, cx); };
-    const button = (id, label, primary, action, tip) => div().id(id).h(26).px(10).flex().items_center().rounded(6).bg(primary ? t.solid : t.raised).text_color(primary ? t.solid_foreground : t.foreground).text_size(11).font_medium().cursor_pointer().hover((s) => s.opacity(0.88)).on_click(stop(action)).tooltip(tip).child(label);
-    const link = (id, label, color, action, tip) => div().id(id).h(26).px(7).flex().items_center().rounded(6).text_size(11).text_color(color).cursor_pointer().hover((s) => s.bg(t.hover)).on_click(stop(action)).tooltip(tip).child(label);
+    const button = (id, label, primary, action, tip) => div().id(id).h(24).px(8).flex().items_center().rounded(6).bg(primary ? t.solid : t.raised).text_color(primary ? t.solid_foreground : t.foreground).text_size(11).font_medium().cursor_pointer().hover((s) => s.opacity(0.88)).on_click(stop(action)).tooltip(tip).child(label);
+    const link = (id, label, color, action, tip) => div().id(id).h(24).px(8).flex().items_center().rounded(6).text_size(11).text_color(color).cursor_pointer().hover((s) => s.bg(t.hover)).on_click(stop(action)).tooltip(tip).child(label);
     return v_flex().id("comment-box").flex_none().gap(8).p(10).text_size(12).when(docked, (e) => e.bg(t.surface))
       .on_mouse_down("left", (_e, cx) => cx.stop_propagation()).on_mouse_up("left", (_e, cx) => cx.stop_propagation()).on_click((_e, cx) => cx.stop_propagation())
       .when(!docked, (e) => e.absolute().top(12).right(14).w(300).rounded(10).border_1().border_color(t.border).bg(t.surface + "eb").shadow_lg())
@@ -744,7 +744,7 @@ export default class Changes extends View {
     for (const it of this.items) if (it.kind === "comment") for (let j = it.from; j <= it.to; j++) commented.add(j);
     const perFile = {};
     for (const c of this.comments) perFile[c.path] = (perFile[c.path] ?? 0) + 1;
-    const button = (id, label, primary, action) => div().id(id).h(24).px(10).flex().items_center().rounded(6).bg(primary ? t.solid : t.raised).text_color(primary ? t.solid_foreground : t.foreground).text_size(12).font_medium().cursor_pointer().hover((s) => s.opacity(0.88)).on_click(action).child(label);
+    const button = (id, label, primary, action) => div().id(id).h(24).px(8).flex().items_center().rounded(6).bg(primary ? t.solid : t.raised).text_color(primary ? t.solid_foreground : t.foreground).text_size(12).font_medium().cursor_pointer().hover((s) => s.opacity(0.88)).on_click(action).child(label);
     const link = (id, label, action) => div().id(id).h(24).px(8).flex().items_center().rounded(6).text_size(12).text_color(t.dim).cursor_pointer().hover((s) => s.bg(t.hover).text_color(t.foreground)).on_click(action).child(label);
     return v_flex().id("changes").size_full().min_h(0).relative().rounded(10).overflow_hidden().bg(t.background).border_1().border_color(t.border).text_color(t.foreground).text_size(13).track_focus(this.handle)
       .on_size_change((size, cx) => { const w = this.size?.width; this.size = size; if (w !== size.width) { this.rebuild(); cx.notify(); } })
@@ -752,7 +752,7 @@ export default class Changes extends View {
         if (e.key === "escape" && this.composer) { this.closeComposer(cx); cx.stop_propagation(); }
         else if (e.key === "enter" && (e.modifiers?.platform || e.modifiers?.control) && this.composer) { this.addComment(cx); cx.stop_propagation(); }
       })
-      .child(h_flex().h(42).flex_none().px(14).gap(8).items_center().border_b(1).border_color(t.border)
+      .child(h_flex().h(32).flex_none().px(14).gap(8).items_center().border_b(1).border_color(t.border)
         .child(div().font_semibold().child("Changes"))
         .child(div().h(24).px(8).flex().items_center().rounded(6).border_1().border_color(t.border).text_size(12).text_color(t.muted).child(`${this.files.length} files`))
         .when(Boolean(this.root) && this.hasHead, (e) => e.child(this.scopePicker(t)))

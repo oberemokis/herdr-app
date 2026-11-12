@@ -11,13 +11,14 @@ export const TEXT = { badge: 10, caption: 11, small: 12, menu: 12.8, body: 13 };
 const RADIUS = { small: 4, control: 6, row: 7, button: 8, panel: 10 };
 export const SIZE = {
   button: 32,
-  header: 42,
-  paneHeader: 30,
-  tab: 29,
+  // Шапки и кнопки под сетку workbench: шапка 32, как у карточки терминала, кнопка в ней 24.
+  header: 32,
+  paneHeader: 32,
+  tab: 24,
   row: 28,
   group: 30,
   menu: 31,
-  icon: 26,
+  icon: 24,
   iconSmall: 20,
 };
 // The tree's grid: a 14px slot and a 6px gap. Every row at a depth starts in the
@@ -93,7 +94,7 @@ export function PaneBar() {
   return h_flex()
     .h(SIZE.paneHeader)
     .flex_none()
-    .px(10)
+    .px(14)
     .gap(8)
     .items_center()
     .border_b(1)
@@ -122,8 +123,8 @@ export function HeaderTab({ id, label, count, active, onClick }) {
     .id(id)
     .h(SIZE.tab)
     .flex_none()
-    .px(10)
-    .gap(7)
+    .px(8)
+    .gap(6)
     .items_center()
     .rounded(RADIUS.row)
     .border(1)
@@ -169,7 +170,7 @@ export function IconButton({
         onClick(cx);
       }),
     )
-    .child(spinning ? Icon(icon, small ? 12 : 15).spin(SPIN_MS) : Icon(icon, small ? 12 : 15));
+    .child(spinning ? Icon(icon, small ? 12 : 14).spin(SPIN_MS) : Icon(icon, small ? 12 : 14));
 }
 
 // A small labelled action, for a heading with room to say what it does.

@@ -530,9 +530,9 @@ export const viewerMethods = {
       root.child(
         h_flex()
           .id("viewer-bar")
-          .h(30)
+          .h(32)
           .flex_none()
-          .px(10)
+          .px(14)
           .gap(8)
           .items_center()
           .border_b(1)

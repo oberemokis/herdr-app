@@ -39,7 +39,7 @@
           "id": "brand",
           "type": "block",
           "size": {
-            "px": 46
+            "px": 42
           },
           "window_drag": true,
           "content": {
@@ -120,9 +120,9 @@
                   },
                   "header": {
                     "content": {
-                      "mod": "pane"
+                      "mod": "workbench-pane"
                     },
-                    "height": 30,
+                    "height": 32,
                     "position": "top",
                     "reveal": "always"
                   }

@@ -22,7 +22,7 @@ export const paneHeaderMethods = {
   paneButton(t, id, icon, command, args) {
     return div()
       .id(id)
-      .p(3)
+      .p(5)
       .rounded(4)
       .text_color(t.dim)
       .hover((s) => s.bg(t.hover).text_color(t.foreground))
@@ -51,7 +51,7 @@ export const paneHeaderMethods = {
     return h_flex()
       .id(`pane-head-${pane}`)
       .size_full()
-      .px(10)
+      .px(14)
       .gap(8)
       .items_center()
       .bg(t.background)

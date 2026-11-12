@@ -44,7 +44,7 @@ export function Panel({ id }) {
 
 export function PanelHeader() {
   const t = theme();
-  return h_flex().h(42).flex_none().px(14).gap(8).items_center().border_b(1).border_color(t.border);
+  return h_flex().h(32).flex_none().px(14).gap(8).items_center().border_b(1).border_color(t.border);
 }
 
 export function Badge(text) {
@@ -73,7 +73,7 @@ export function IconButton({
   const t = theme();
   return div()
     .id(id)
-    .size(small ? 22 : 26)
+    .size(small ? 22 : 24)
     .flex_none()
     .flex()
     .items_center()
@@ -91,7 +91,7 @@ export function IconButton({
           onClick(cx);
         }),
     )
-    .child(spinning ? Icon(icon, 15).spin(SPIN_MS) : Icon(icon, small ? 13 : 15));
+    .child(spinning ? Icon(icon, 14).spin(SPIN_MS) : Icon(icon, small ? 13 : 14));
 }
 
 // A small labelled action, for a row with room to say what it does.
@@ -99,10 +99,10 @@ export function TextButton({ id, icon, label, onClick, disabled = false, active 
   const t = theme();
   return h_flex()
     .id(id)
-    .h(22)
+    .h(24)
     .flex_none()
-    .px(6)
-    .gap(4)
+    .px(8)
+    .gap(6)
     .items_center()
     .rounded(4)
     .text_size(TEXT.caption)
@@ -153,10 +153,10 @@ export function MenuButton({ id, label }) {
   const t = theme();
   return h_flex()
     .id(id)
-    .h(26)
+    .h(24)
     .flex_none()
     .px(8)
-    .gap(5)
+    .gap(6)
     .items_center()
     .rounded(6)
     .border_1()
