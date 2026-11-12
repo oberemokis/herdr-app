@@ -6,10 +6,12 @@
 import { View, div } from "gpui-kit";
 import { v_flex, h_flex } from "gpui-base";
 import { run, props, closeOverlay, theme } from "herdr";
+import { squareCorners } from "./square.js";
 import { plan, plural } from "./close-plan.js";
 
 export default class CloseConfirm extends View {
   init(_props, cx) {
+    squareCorners();
     this.handle = cx.focus_handle();
     this.handle.focus();
     this.plan = plan(props() ?? {});

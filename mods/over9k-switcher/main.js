@@ -10,6 +10,7 @@
 import { View, div, svg, image } from "gpui-kit";
 import { v_flex, h_flex } from "gpui-base";
 import { agents, spaces, panes, run, props, closeOverlay, theme, shared, setShared, nextCommand, home } from "herdr";
+import { squareCorners } from "./square.js";
 import { agentTask } from "./agent-name.js";
 
 const APP_NAMES = { antigravity: "Antigravity" };
@@ -48,6 +49,7 @@ function spaceOf(a) {
 
 export default class Switcher extends View {
   init(_props, cx) {
+    squareCorners();
     this.handle = cx.focus_handle();
     this.handle.focus();
     this.items = list();

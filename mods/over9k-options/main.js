@@ -10,6 +10,7 @@ import { v_flex, h_flex } from "gpui-base";
 import { FolderPick } from "./folder-pick.js";
 import { helpTopics } from "./help.js";
 import { props, closeOverlay, openOverlay, theme, shared, setShared, home, pickFolder, exec, machines } from "herdr";
+import { squareCorners } from "./square.js";
 
 export const DEFAULTS = { keepUpToDate: false, todos: true, todoLog: true, todoSync: false, timeline: true, todoFile: false, layout: "expanded", model: true, effort: true, context: true, since: true, cache: true, github: true, dirty: true, sync: true,
   subModel: true, subEffort: true, subContext: true, subTime: true,
@@ -66,6 +67,7 @@ const GITHUB_ITEMS = [
 
 export default class SidebarOptions extends View {
   init(_props, cx) {
+    squareCorners();
     this.handle = cx.focus_handle();
     this.handle.focus();
     this.tab = "options";

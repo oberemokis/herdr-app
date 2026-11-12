@@ -13,6 +13,7 @@
 import { View, div, image, svg } from "gpui-kit";
 import { v_flex, h_flex } from "gpui-base";
 import { spaces, machines, panes, agents, terminals, setAgentOrder, run, openOverlay, exec, hc, home, appHome, readTextFile, theme, shared, setShared, watchFolder, window, layout, notify, focused, nextCommand } from "herdr";
+import { squareCorners } from "./square.js";
 import { plan, plural } from "./close-plan.js";
 import { codexTitle, agentTask, isCodex, sentenceCase } from "./agent-name.js";
 
@@ -282,6 +283,7 @@ export function tone(t, status) {
 
 export default class Spaces extends View {
   init(_props, cx) {
+    squareCorners();
     this.git = {}; // where() -> { name, branch, ahead, behind, repo, linked }, null: not a repo
     this.checked = {}; // where() -> when it was last looked at
     this.unsure = new Set(); // where()s git couldn't answer for (a machine away)

@@ -1,5 +1,6 @@
 import { View } from "gpui-kit";
 import { props } from "herdr";
+import { squareCorners } from "./square.js";
 import { Graph } from "./graph.js";
 import { Menu } from "./menu.js";
 import { Dialog } from "./dialog.js";
@@ -11,6 +12,7 @@ import { Settings } from "./settings.js";
 // the Manygit settings (props.role).
 export default class GitGraph extends View {
   init(_props, cx) {
+    squareCorners();
     const role = props()?.role;
     this.part = role === "menu" ? new Menu() : role === "dialog" ? new Dialog() : role === "update" ? new Update() : role === "settings" ? new Settings() : new Graph();
     this.part.init(cx);

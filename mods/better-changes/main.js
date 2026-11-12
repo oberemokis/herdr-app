@@ -8,6 +8,7 @@
 // git/reads.js reads from Git, git/model.js parses its output, views/ui.js holds every look.
 import { View } from "gpui-kit";
 import { props, shared, setShared, nextCommand, layout, run, notify, closeOverlay } from "herdr";
+import { squareCorners } from "./square.js";
 import { loadSettings, duration } from "./settings.js";
 import { followFileIcons } from "./file-icons.js";
 import { panelCommands } from "./panel.js";
@@ -28,6 +29,7 @@ const DEFAULT_SETTINGS = {
 
 class BetterChanges extends View {
   init(given, cx) {
+    squareCorners();
     const p = props() ?? given ?? {};
     // Herdr hands a pane header its pane. One copy runs per pane, so it reads no Git.
     if (p.pane) {

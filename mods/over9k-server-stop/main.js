@@ -7,9 +7,11 @@
 import { View, div } from "gpui-kit";
 import { v_flex, h_flex } from "gpui-base";
 import { props, closeOverlay, theme, exec, notify } from "herdr";
+import { squareCorners } from "./square.js";
 
 export default class ServerStop extends View {
   init(_props, cx) {
+    squareCorners();
     this.handle = cx.focus_handle();
     this.handle.focus();
   }

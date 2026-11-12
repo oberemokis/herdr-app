@@ -14,6 +14,7 @@
 import { View } from "gpui-kit";
 import { TextareaState } from "gpui-base";
 import { appHome, exec, nextCommand, props, setShared, shared, spaces } from "herdr";
+import { squareCorners } from "./square.js";
 import { loadSettings, duration } from "./settings.js";
 import { followFileIcons } from "./files/file-icons.js";
 import { readMethods } from "./files/reads.js";
@@ -30,6 +31,7 @@ const SYNC_MS = 300;
 
 class BetterFiles extends View {
   init(given, cx) {
+    squareCorners();
     const p = props() ?? given ?? {};
     this.mode = p.mode ?? "sidebar";
     if (this.mode === "menu") {

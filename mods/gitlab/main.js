@@ -9,6 +9,7 @@
 import { View, div, svg } from "gpui-kit";
 import { v_flex, h_flex, InputState, Input, Scrollbar, v_virtual_list, TextView } from "gpui-base";
 import { spaces, panes, focused, theme, notify, layout, props, shared, closeOverlay, settings } from "herdr";
+import { squareCorners } from "./square.js";
 import * as api from "./api.js";
 import { ACTIVE, ENDED, nodes, restId, refLabel, ago, took, diffRows, diffCounts } from "./util.js";
 import { icon, BRAND, look, statusIcon, mergeStatus, mrColor, iconButton, pill } from "./ui.js";
@@ -40,6 +41,7 @@ const fileStatus = (f) => (f.new_file ? "A" : f.deleted_file ? "D" : f.renamed_f
 
 export default class GitLab extends View {
   init(_props, cx) {
+    squareCorners();
     const p = props() ?? {};
     if (p.menu) { this.mode = "menu"; this.at = -1; this.handle = cx.focus_handle(); this.handle.focus(); return; }
     if (p.dialog) { this.mode = "dialog"; this.dialog = new Dialog(p.dialog, cx); return; }

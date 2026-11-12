@@ -4,6 +4,7 @@
 import { View, div, svg } from "gpui-kit";
 import { v_flex, h_flex } from "gpui-base";
 import { exec, theme, layout, window } from "herdr";
+import { squareCorners } from "./square.js";
 import { SCRIPT, PROCS, parse, parseProcs, gb } from "./stats.js";
 
 const SAMPLES = 40; // CPU history: 40 samples, 2 minutes while the window is in front
@@ -21,6 +22,7 @@ const narrow = () => (find(layout(), "sidebar")?.size?.px ?? Infinity) < 160;
 
 export default class MachineVitals extends View {
   init(_props, cx) {
+    squareCorners();
     this.cpu = [];
     this.now = null;
     this.busy = false;

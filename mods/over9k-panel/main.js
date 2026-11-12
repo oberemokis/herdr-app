@@ -6,8 +6,11 @@
 import { View, div, svg } from "gpui-kit";
 import { h_flex } from "gpui-base";
 import { theme, shared, setShared, run, hc } from "herdr";
+import { squareCorners } from "./square.js";
 
 export default class PanelHead extends View {
+  init() { squareCorners(); }
+
   close() {
     const v = shared("over9k.panelView");
     run("layout.hide", { id: "panel" });

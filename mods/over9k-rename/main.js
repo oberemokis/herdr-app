@@ -6,12 +6,14 @@
 import { View, div } from "gpui-kit";
 import { v_flex, h_flex, InputState, Input } from "gpui-base";
 import { props, closeOverlay, theme, shared, setShared, agents, run, hc, exec } from "herdr";
+import { squareCorners } from "./square.js";
 
 // How each agent renames its session.
 const RENAME = { "claude-code": "/rename", claude: "/rename", codex: "/rename", pi: "/name" };
 
 export default class Prompt extends View {
   init(_props, cx) {
+    squareCorners();
     this.text = props()?.value ?? "";
     this.input = InputState.new({ value: this.text });
     if (this.text) this.input.set_selected_range({ start: 0, end: this.text.length });

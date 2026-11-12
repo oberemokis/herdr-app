@@ -1,6 +1,7 @@
 import { View, div, svg } from "gpui-kit";
 import { h_flex, v_flex } from "gpui-base";
 import { theme, run, props, updates, layout, openOverlay, closeOverlay } from "herdr";
+import { squareCorners } from "./square.js";
 
 // Подвал сайдбара из workspace-chrome Herdr 0.1.15. Settings открывает меню с настройками
 // Herdr и over9k: в само окно Settings Herdr моды встраиваться не могут.
@@ -22,6 +23,8 @@ const openSettingsMenu = () => openOverlay({ mod: "workbench-footer", kind: "pop
 const openOver9k = () => openOverlay({ mod: "over9k-options", kind: "dialog", width: 740, height: 600 });
 
 export default class WorkbenchFooter extends View {
+  init() { squareCorners(); }
+
   render() {
     const t = theme();
     const ready = () => div().size(6).rounded_full().bg(t.accent);

@@ -16,6 +16,7 @@
 import { View, div, svg, image } from "gpui-kit";
 import { h_flex, v_flex, InputState, Input } from "gpui-base";
 import { theme, spaces, panes, knownAgents, run, openOverlay, closeOverlay, props, window, keys, exec, home, appHome, shared, setShared, notify, readTextFile, pickFolder, layout } from "herdr";
+import { squareCorners } from "./square.js";
 
 // Past sessions of each agent, newest first, as lines of id, when (seconds),
 // title, the folder it ran in, and the model and provider it last used. With a folder ($1): those started there;
@@ -186,6 +187,7 @@ function shortcut(name) {
 
 export default class NewMenu extends View {
   init(_props, cx) {
+    squareCorners();
     this.agents = [];
     this.sessions = {};
     this.list = null; // the agent whose sessions are shown instead of the menu

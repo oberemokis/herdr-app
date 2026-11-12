@@ -1,6 +1,7 @@
 import { View, div, svg, image } from "gpui-kit";
 import { h_flex, ScrollHandle } from "gpui-base";
 import { spaces, panes, run, openOverlay, theme, window, layout, settings, props, nextCommand } from "herdr";
+import { squareCorners } from "./square.js";
 
 // Клон вкладок Herdr 0.1.15: кнопки боковых панелей задаёт раскладка (props.panels),
 // а `workbench-tabs.<id>` из keys.json открывает и закрывает панель с этим id.
@@ -21,6 +22,7 @@ function find(node, id) {
 
 export default class Tabs extends View {
   init(_props, cx) {
+    squareCorners();
     this.pressed = null;
     this.scroll = ScrollHandle.new();
     this.panels = JSON.parse(localStorage.getItem("panels") ?? "{}");

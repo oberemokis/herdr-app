@@ -8,6 +8,7 @@ import { v_flex, h_flex } from "gpui-base";
 import { plan } from "./close-plan.js";
 import { agentTask } from "./agent-name.js";
 import { run, props, closeOverlay, openOverlay, theme, themes, keys, terminals, spaces, panes, agents, exec, home, shared, setShared } from "herdr";
+import { squareCorners } from "./square.js";
 
 // Where a space is now: its first terminal's live folder, else where it was made.
 function place(s) {
@@ -236,6 +237,7 @@ function shortcut(name, args) {
 
 export default class Menu extends View {
   init(_props, cx) {
+    squareCorners();
     this.at = 0;
     this.git = null;
     this.handle = cx.focus_handle();
