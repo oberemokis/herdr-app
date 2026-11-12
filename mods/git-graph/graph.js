@@ -12,7 +12,8 @@ import { icon } from "./menu.js";
 import { available, check, openUpdate, newer } from "./update.js";
 import { depthOf, unsearched, findArgs, parseFound, REPO_STATUS, LATEST_TAG, FETCH, REMOTES, fetchable, parseRepoStatus, parseRemotes, webUrl, syncOf } from "./repos.js";
 
-// Базовая ветка задаёт раскладка: props блока { "base": "dev" }.
+// Общую базовую ветку задаёт раскладка: props блока { "base": "dev" }. Ветка со своей базой
+// в `git config branch.<ветка>.base` выделяет её (readFolder → ownBase).
 const baseBranch = () => props()?.base ?? null;
 
 // The frame the shown tab's panes are drawn in, so the panel beside them takes the
@@ -92,7 +93,7 @@ const folderState = () => ({
   state: "loading", root: null, on: null, cwd: null, error: null,
   workspace: null, statuses: new Map(), opened: null, skipped: false,
   base: [], commits: [], rows: [], lanes: 1, labels: new Map(), index: new Map(), hasMore: false, limit: PAGE, files: [], ctx: null,
-  head: null, current: null, branches: [], remoteNames: [], signature: null, scope: null, moreAsked: null,
+  head: null, current: null, ownBase: null, branches: [], remoteNames: [], signature: null, scope: null, moreAsked: null,
   selected: null, details: null, diff: null,
 });
 
@@ -103,22 +104,34 @@ const folderState = () => ({
 // (warm) for its history and refs; its uncommitted row comes when it's shown.
 async function readFolder(cwd, on, { all, remotes, limit, status: withStatus = true }) {
   const git = (args) => exec("git", [...READ, ...args], { cwd, on });
-  const [top, log, head, current, branches, remoteNames, status] = await Promise.all([
+  const [top, log, head, current, branches, remoteNames, status, bases] = await Promise.all([
     // One commit past the page says whether there are more, as Git Graph asks.
     exec("git", ["rev-parse", "--show-toplevel"], { cwd, on }), git(logArgs({ all, remotes, limit: limit + 1 })),
     git(["rev-parse", "--verify", "-q", "HEAD"]), git(["symbolic-ref", "-q", "--short", "HEAD"]),
-    git(["for-each-ref", "--format=%(refname)", "refs/heads"]), git(["remote"]), withStatus ? git(STATUS) : null]);
+    git(["for-each-ref", "--format=%(refname)", "refs/heads"]), git(["remote"]), withStatus ? git(STATUS) : null,
+    git(["config", "--get-regexp", "^branch\\..*\\.base$"])]);
   if (top.code !== 0) return { state: "norepo", cwd, on };
   // A log that fails without a HEAD is a repository with no commits yet.
   if (log.code !== 0 && head.code === 0) throw new Error(log.stderr.trim());
   const base = log.code === 0 ? parseLog(log.stdout) : [];
+  const branchNames = branches.stdout.split("\n").filter(Boolean).map((r) => r.replace(/^refs\/heads\//, ""));
+  const branch = current.code === 0 ? current.stdout.trim() : null;
+  // База, записанная текущей ветке (`branch.<ветка>.base`), важнее общей из раскладки.
+  // Если такой ветки нет ни локально, ни на origin, выделяется общая база.
+  let ownBase = null;
+  for (const line of bases.code === 0 ? bases.stdout.split("\n") : []) {
+    const space = line.indexOf(" ");
+    if (space > 0 && line.slice(0, space) === `branch.${branch}.base`) ownBase = line.slice(space + 1).trim() || null;
+  }
+  if (ownBase && !branchNames.includes(ownBase)
+    && (await git(["rev-parse", "--verify", "-q", `refs/remotes/origin/${ownBase}`])).code !== 0) ownBase = null;
   return {
     root: top.stdout.trim(), on, cwd, base: base.slice(0, limit), limit, hasMore: base.length > limit,
-    head: head.code === 0 ? head.stdout.trim() : null, current: current.code === 0 ? current.stdout.trim() : null,
-    branches: branches.stdout.split("\n").filter(Boolean).map((r) => r.replace(/^refs\/heads\//, "")),
+    head: head.code === 0 ? head.stdout.trim() : null, current: branch, ownBase,
+    branches: branchNames,
     remoteNames: remoteNames.stdout.split("\n").filter(Boolean),
     files: status?.code === 0 ? parseStatus(status.stdout) : [],
-    signature: [log.stdout, head.stdout, current.stdout, branches.stdout, remoteNames.stdout].join("\0"), scope: scopeOf({ all, remotes }),
+    signature: [log.stdout, head.stdout, current.stdout, branches.stdout, remoteNames.stdout, ownBase ?? ""].join("\0"), scope: scopeOf({ all, remotes }),
   };
 }
 
@@ -613,7 +626,7 @@ export class Graph {
   label(label, color, t, mono) {
     const current = label.kind === "branch" && label.head;
     // База веток задач видна сразу: от неё считается дифф ревью.
-    const first = label.parts[0]?.name ?? "", wanted = baseBranch();
+    const first = label.parts[0]?.name ?? "", wanted = this.ownBase ?? baseBranch();
     const base = Boolean(wanted) && (label.kind === "branch" ? first === wanted
       : label.kind === "remote" && first.slice(first.indexOf("/") + 1) === wanted);
     const edge = base ? t.accent : label.kind === "tag" ? t.ansi3 : label.kind === "head" ? t.accent : color;

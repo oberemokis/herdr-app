@@ -40,15 +40,20 @@ export default class Tabs extends View {
 
   // The side panel is remembered per space: switching shows that space's choice
   // (closed if it never had one), and opening or closing it records it.
+  // Пространство без записи получает панель props.defaultPanel, если она задана.
   syncPanel(space, panel, body, enabled) {
     if (!space || !panel) return;
     const now = panel.hidden ? null : body?.active ?? null;
     if (space.id !== this.space) {
-      const first = this.space === undefined;
+      const first = this.space === undefined, seen = space.id in this.panels;
+      // Восстановление прошлого пространства ещё в пути: его show может прийти уже сюда,
+      // поэтому состояние этого пространства отдаём явно, даже если сейчас оно совпадает.
+      const interrupted = Boolean(this.pending);
+      const fallback = enabled.includes(props()?.defaultPanel) ? props().defaultPanel : null;
       this.space = space.id; this.pending = null;
-      if (!(first && !(space.id in this.panels))) {
-        const stored = this.panels[space.id] ?? null, want = enabled.includes(stored) ? stored : null;
-        if (want !== now) {
+      if (!(first && !seen && !fallback)) {
+        const stored = seen ? this.panels[space.id] ?? null : fallback, want = enabled.includes(stored) ? stored : null;
+        if (want !== now || interrupted) {
           this.pending = { want, until: Date.now() + 1000 };
           if (want) { run("layout.select", { stack: "panel-body", child: want }); run("layout.show", { id: "panel" }); }
           else run("layout.hide", { id: "panel" });

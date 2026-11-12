@@ -84,6 +84,7 @@
           "content": {
             "mod": "workbench-tabs",
             "props": {
+              "defaultPanel": "review",
               "panels": [
                 { "id": "files", "label": "Files", "icon": "mods/better-files/icons/file.svg" },
                 { "id": "changes", "label": "Changes", "icon": "mods/changes/changes.svg" },

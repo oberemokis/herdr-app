@@ -316,7 +316,13 @@ export default class Changes extends View {
   async scopes(git, sha) {
     const out = async (args) => { const r = await git(args); return r.code === 0 ? r.stdout.trim() : null; };
     const branch = await out(["rev-parse", "--abbrev-ref", "HEAD"]);
-    let base = typeof props()?.base === "string" ? props().base : null;
+    // База, записанная самой ветке (`git config branch.<ветка>.base`), важнее общей из раскладки:
+    // ветка от master сравнивается с master. Если такой базы нет ни на origin, ни локально, берём общую.
+    const fallback = typeof props()?.base === "string" ? props().base : null;
+    const own = branch && branch !== "HEAD" ? await out(["config", "--get", `branch.${branch}.base`]) : null;
+    const known = async (b) => (await out(["rev-parse", "--verify", "-q", `refs/remotes/origin/${b}`])) !== null
+      || (await out(["rev-parse", "--verify", "-q", `refs/heads/${b}`])) !== null;
+    let base = own && (await known(own)) ? own : fallback;
     if (!base) { const h = await out(["symbolic-ref", "-q", "refs/remotes/origin/HEAD"]); if (h) base = h.replace(/^refs\/remotes\/origin\//, ""); }
     if (!base) for (const b of ["main", "master"]) { if (await out(["rev-parse", "--verify", "-q", `refs/heads/${b}`]) !== null) { base = b; break; } }
     let merge = null;

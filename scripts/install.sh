@@ -39,6 +39,15 @@ for mod in "${mods[@]}"; do
   fi
 done
 
+# Проверка до копирования: Herdr подхватывает моды на лету, и сломанный мод заработал бы
+# в окне раньше, чем проверка в конце его поймала.
+say "Проверка модов:"
+failed=0
+for mod in "${mods[@]}"; do
+  herdr-app check "$REPO/mods/$mod" || failed=1
+done
+[ "$failed" = 0 ] || { echo "Часть модов не прошла herdr-app check, ничего не установлено" >&2; exit 1; }
+
 say "Резервная копия: $BACKUP"
 run mkdir -p "$BACKUP/mods" "$BACKUP/layouts" "$BACKUP/themes"
 for mod in "${mods[@]}"; do
@@ -85,17 +94,7 @@ for keys in "$REPO"/keys/*.json; do
   fi
 done
 
-if [ "$DRY" = 1 ]; then
-  say "Проверка модов пропущена в --dry-run"
-  exit 0
-fi
-
-say "Проверка модов:"
-failed=0
-for mod in "${mods[@]}"; do
-  herdr-app check "$HOME_DIR/mods/$mod" || failed=1
-done
-[ "$failed" = 0 ] || { echo "Часть модов не прошла herdr-app check" >&2; exit 1; }
+[ "$DRY" = 1 ] && exit 0
 
 say ""
 say "Готово. Включить раскладку: herdr-app do layout.switch --name workbench"
