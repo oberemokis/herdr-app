@@ -1,0 +1,4 @@
+# Herdr пишет их в папку мода при проверке и запуске
+gpui-kit.d.ts
+jsconfig.json
+.DS_Store
