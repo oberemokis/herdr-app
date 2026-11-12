@@ -89,6 +89,8 @@ const MARKED = `{ for d in "$@"; do case "$d" in "~") d=$HOME ;; "~/"*) d="$HOME
   find "$HOME" -maxdepth 3 \\( -path "$HOME/.*" -o -name node_modules \\) -prune -o \\
     \\( -name CLAUDE.md -o -name CLAUDE.local.md -o -name AGENTS.md -o \\( -name .claude -type d \\) \\) -print 2>/dev/null
 } | sed 's#/[^/]*$##' | sort -u`;
+// Скрыть раздел «Parked» (проекты без открытого пространства).
+const HIDE_PARKED = true;
 // A computer's two places (set in over9k-options): Chats, where conversations
 // about no project start (home unless set), and Projects, where every git repo
 // is a project. Unset, Projects is the
@@ -2417,6 +2419,8 @@ export default class Spaces extends View {
   // Projects with no space, under one header, folded until opened.
   // On another computer (m): its listed projects with no space open.
   closedSection(t, collapsed, m = null) {
+    // Раздел «Parked» скрыт: в сайдбаре только открытые пространства, проекты открываются через +.
+    if (HIDE_PARKED) return [];
     const busy = new Set(this.lifted(m));
     const list = this.closedOn(m).filter((d) => !busy.has(d));
     if (!list.length) return [];
