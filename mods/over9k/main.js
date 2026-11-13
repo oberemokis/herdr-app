@@ -1,5 +1,5 @@
 // Over9k: the sidebar's spaces, terminals and agents in one list (help and
-// options: over9k-options). Workspace spaces: stable colored avatars, worktrees under their checkout,
+// options: over9k-options). Workspace spaces: stable colored avatars, a fleet task's space under its orchestrator's,
 // grouped by computer (This computer always has its heading). After a space's name, the repo
 // its first terminal is in now, only where unusual: branch, ahead/behind. Agent state lives in the agents list, not here. Click to
 // switch, right-click for its menu, drag to reorder.
@@ -71,6 +71,22 @@ const title = (s) => (s.named || s.machine ? s.name : !s.folder || s.folder.repl
 const rowHeight = ({ tree }) => (tree ? 28 : 30);
 const where = (s, ps) => JSON.stringify([s.machine ?? null, place(s, ps)]);
 const base = (path) => path.replace(/\/+$/, "").split("/").pop();
+// Пространство задачи fleet -> пространство её оркестратора, по метке task-fleet.space у терминала
+// задачи. По git не связать: оркестратор бывает в пространстве на ~, и два в одном репо неразличимы.
+function fleetParents(sp, ps, terms) {
+  const spaceOfTab = new Map();
+  for (const s of sp) for (const tab of s.tabs ?? []) spaceOfTab.set(tab.id, s);
+  const byId = new Map(sp.map((s) => [s.id, s]));
+  const label = new Map(terms.filter((k) => k.state === "live" && k.labels?.["task-fleet.space"]).map((k) => [k.address, k.labels["task-fleet.space"]]));
+  const out = new Map();
+  for (const p of ps) {
+    const own = spaceOfTab.get(p.tab), parent = byId.get(label.get(p.terminal));
+    if (own && parent && parent !== own && (own.machine ?? null) === (parent.machine ?? null)) out.set(own.id, parent.id);
+  }
+  // Дерево в одну ступень: чьё-то дитя своих детей не держит, иначе они пропали бы из списка.
+  for (const [kid, parent] of out) if (out.has(parent)) out.delete(kid);
+  return out;
+}
 // Changes made outside Herdr (an editor's save, a commit in another app): looked
 // for this often, in repos the list shows, while the window is in front.
 const FALLBACK = 60000;
@@ -295,7 +311,7 @@ export default class Spaces extends View {
     this.at = {}; // space -> its where() at the last look
     this.watching = new Set(); // local repos' git folders
     // Spaces made while this runs wait (at most a moment) for their git, so a
-    // worktree appears under its repo instead of jumping there.
+    // row appears with its git chips instead of growing them a moment later.
     this.shown = new Set(spaces().map((s) => s.id));
     this.born = {};
     this.pressed = null;
@@ -888,7 +904,8 @@ export default class Spaces extends View {
   // else, a row of its own for that folder (its repo's top when it's in one).
   // Only this computer's; another machine's stay with their space. Map key ->
   // panes, key a space id or "d:<folder>" for a project or folder with no space.
-  assign(sp, ps) {
+  // Терминалы пространства оркестратора (mains) остаются в нём, а не уходят в строку своей папки.
+  assign(sp, ps, mains = new Set()) {
     const spaceOfTab = new Map();
     for (const s of sp) for (const tab of s.tabs ?? []) spaceOfTab.set(tab.id, s);
     const local = sp.filter((s) => !s.machine);
@@ -906,7 +923,7 @@ export default class Spaces extends View {
       const mine = p.terminal && spaceOfTab.get(p.tab);
       if (!mine) continue;
       let key = mine.id;
-      if (!mine.machine && p.cwd) {
+      if (!mine.machine && p.cwd && !mains.has(mine.id)) {
         const cwd = trim(p.cwd) || "/";
         const best = places.filter((x) => inside(cwd, x.dir)).sort((a, b) => b.dir.length - a.dir.length)[0];
         if (best) key = best.key;
@@ -923,10 +940,18 @@ export default class Spaces extends View {
     return groups;
   }
 
+  // Терминалы строки; `which` делит пространство оркестратора на оркестраторы и прочих.
+  part(key, which = null) {
+    const all = this.frame.groups.get(key) ?? [];
+    return which ? all.filter(({ p }) => this.frame.leads.has(p.terminal) === (which === "lead")) : all;
+  }
+
   // A row's terminals: status, icon, name, and for an agent its model · effort ·
   // context % when known. Click shows it; Ctrl+click picks it to close. A
   // worktree's terminals sit one step further in than the worktree row.
-  termRows(key, t, indent = 0) {
+  // `which` у пространства оркестратора: "lead" — сами оркестраторы, над деревом задач,
+  // "rest" — прочие его терминалы, под деревом.
+  termRows(key, t, indent = 0, which = null) {
     const { byPane } = this.frame;
     // Something an agent started (open beside it) is listed under that agent
     // (subRows), not again on its own, while the agent runs.
@@ -934,7 +959,7 @@ export default class Spaces extends View {
     const child = (term) => Boolean(live.get(term)?.parent && live.has(live.get(term).parent))
       // A subagent's or a process's live view (view()) too: its row is under the agent.
       || live.get(term)?.labels?.over9k === "view" || Object.values(this.viewers ?? {}).includes(term);
-    return (this.frame.groups.get(key) ?? []).filter(({ p }) => this.passes(byPane.get(p.pane)) && !child(p.terminal) && (!this.onlyPane || p.pane === this.onlyPane)).flatMap(({ p, space, tab }) => {
+    return this.part(key, which).filter(({ p }) => this.passes(byPane.get(p.pane)) && !child(p.terminal) && (!this.onlyPane || p.pane === this.onlyPane)).flatMap(({ p, space, tab }) => {
       this.vis.push(`p:${p.pane}`);
       const a = byPane.get(p.pane);
       const idle = !a || a.status === "idle" || a.status === "done";
@@ -1946,24 +1971,24 @@ export default class Spaces extends View {
     openOverlay({ mod: "over9k-menu", kind: "popup", width: 200, height: 291, props: { tab: "space", target: { id: w.id } } });
   }
 
-  // Spaces in order, each worktree space moved under its main checkout's.
+  // Spaces in order: each orchestrator's space (main) with its fleet tasks' spaces under it
+  // (fleetParents), then the rest. A worktree opened by hand isn't nested.
   ordered() {
-    const { sp, ps } = this.frame;
+    const { sp, ps, parents } = this.frame;
     const ready = (w) => this.shown.has(w.id) || where(w, ps) in this.git || Date.now() - (this.born[w.id] ??= Date.now()) > 1500;
     for (const w of sp) if (!this.shown.has(w.id) && ready(w)) this.shown.add(w.id);
     const list = sp.map((w, i) => ({ w, i, g: this.git[where(w, ps)] ?? null })).filter((r) => this.shown.has(r.w.id));
-    const mains = new Set(list.filter((r) => r.g && !r.g.linked).map((r) => r.g.repo));
-    const nested = (r) => r.g?.linked && mains.has(r.g.repo);
+    const ids = new Set(list.map((r) => r.w.id));
+    const under = (r) => (ids.has(parents.get(r.w.id)) ? parents.get(r.w.id) : null);
+    const kidsOf = (id) => list.filter((k) => under(k) === id);
     const out = [];
-    const placed = new Set(); // repos whose worktrees are listed (under the first of its spaces)
     for (const r of list) {
-      if (nested(r)) continue;
-      out.push({ ...r, tree: null });
-      if (!r.g || r.g.linked || placed.has(r.g.repo)) continue;
-      placed.add(r.g.repo);
-      const kids = list.filter((k) => nested(k) && k.g.repo === r.g.repo);
+      const kids = under(r) ? [] : kidsOf(r.w.id);
+      if (!kids.length) continue;
+      out.push({ ...r, tree: null, main: true });
       kids.forEach((k, n) => out.push({ ...k, tree: n === kids.length - 1 ? "└─" : "├─", under: r.w.id }));
     }
+    for (const r of list) if (!under(r) && !kidsOf(r.w.id).length) out.push({ ...r, tree: null });
     return out;
   }
 
@@ -2061,15 +2086,15 @@ export default class Spaces extends View {
 
   // The rows, under a heading per computer: This computer always, then each other one.
   grouped(t, collapsed) {
-    // This computer's rows: ~, then spaces in folders that aren't projects (white),
-    // then projects, each group in Herdr's order.
+    // This computer's rows: orchestrators' trees first, as ordered() put them, then ~,
+    // spaces in folders that aren't projects (white), projects, each group in Herdr's order.
     const listed = new Set(this.projects);
-    const rank = (r) => r.w.machine ? 0 : (r.w.folder ?? "").replace(/\/+$/, "") === homeDir() ? 0 : r.tree || listed.has((r.w.folder ?? "").replace(/\/+$/, "")) ? 2 : 1;
+    const rank = (r) => r.w.machine ? 0 : r.main || r.under ? -1 : (r.w.folder ?? "").replace(/\/+$/, "") === homeDir() ? 0 : listed.has((r.w.folder ?? "").replace(/\/+$/, "")) ? 2 : 1;
     const rows = this.drawn = this.ordered().map((r, n) => ({ r, n })).sort((a, b) => (a.r.w.machine ? 0 : rank(a.r)) - (b.r.w.machine ? 0 : rank(b.r)) || a.n - b.n).map((x) => x.r);
     if (this.filter === "agents" && this.agentsBy === "state" && !collapsed) return this.agentSections(t, rows);
     // A worktree folds away with its main space (under).
     const on = Boolean(this.filter);
-    const draw = (r) => (on && !this.spaceMatches(r.w.id) ? [] : r.under && this.agentsFolded.has(r.under) && !on ? [] : collapsed ? [this.compact(r, t)] : [this.row(r, t), ...(this.agentsFolded.has(r.w.id) && !on ? [] : this.termRows(r.w.id, t, r.tree ? TREE : 0)),
+    const draw = (r) => (on && !this.spaceMatches(r.w.id) ? [] : r.under && this.agentsFolded.has(r.under) && !on ? [] : collapsed ? [this.compact(r, t)] : [this.row(r, t), ...(this.agentsFolded.has(r.w.id) && !on ? [] : this.termRows(r.w.id, t, r.tree ? TREE : 0, r.main ? "lead" : null)),
       // Another computer's space: this computer's agents connected and working in it.
       ...(r.w.machine && r.w.folder && !on ? this.sshRows(r.w.machine, t, r.w.folder.replace(/\/+$/, "")) : []),
       // Sub-agents started elsewhere that are working in this space.
@@ -2089,9 +2114,13 @@ export default class Spaces extends View {
     const closed = () => on ? [] : [...busy(null), ...this.looseRows(t, collapsed, true), ...this.closedSection(t, collapsed)];
     // Other folders' rows go right after ~ (first, when there's no ~ space).
     const others = () => on ? [] : this.looseRows(t, collapsed, false);
-    const atHome = (r) => !r.w.machine && (r.w.folder ?? "").replace(/\/+$/, "") === homeDir();
+    // Строки деревьев не дом: оркестратор на ~ не тянет за собой строки папок.
+    const atHome = (r) => !r.w.machine && !r.main && !r.under && (r.w.folder ?? "").replace(/\/+$/, "") === homeDir();
     const homeAt = rows.findIndex(atHome);
-    const drawAll = (list) => list.flatMap((r) => [...draw(r), ...(r === rows[homeAt] ? others() : [])]);
+    const trees = rows.filter((r) => !r.w.machine && (r.main || r.under)).length;
+    // Прочие терминалы пространства оркестратора идут после его последней задачи: к ним они не относятся.
+    const rest = (r) => (r.tree === "└─" && !collapsed && (on || !this.agentsFolded.has(r.under)) ? this.termRows(r.under, t, 0, "rest") : []);
+    const drawAll = (list) => list.flatMap((r) => [...draw(r), ...rest(r), ...(r === rows[homeAt] ? others() : [])]);
     // This computer always gets its heading (its +, local servers), others too.
     const machineNames = [null, ...remote];
     return machineNames.flatMap((m) => {
@@ -2120,7 +2149,8 @@ export default class Spaces extends View {
             .on_mouse_down("left", (_e, cx) => cx.stop_propagation())
             .on_click((_e, cx) => { cx.stop_propagation(); this.addHome(m); })
             .child(svg("mods/workspace-chrome/plus.svg").size(12)))));
-      const drawn = m ? [...(on ? [] : this.sshRows(m, t)), ...mine.flatMap(draw), ...busy(m)] : [...(homeAt < 0 ? others() : []), ...drawAll(mine)];
+      const drawn = m ? [...(on ? [] : this.sshRows(m, t)), ...mine.flatMap(draw), ...busy(m)]
+        : [...drawAll(mine.slice(0, trees)), ...(homeAt < 0 ? others() : []), ...drawAll(mine.slice(trees))];
       const extra = on ? [] : m ? this.closedSection(t, collapsed, m) : closed();
       // Filtered: a computer with nothing that passes isn't listed at all.
       if (on && !drawn.length) return [];
@@ -2479,10 +2509,13 @@ export default class Spaces extends View {
     }
     if (changed) setShared("space.colors", kept);
     // One read of panes and agents per render (each read copies them all).
-    const ps = panes(), ag = agents();
+    const ps = panes(), ag = agents(), terms = terminals();
     this.projects = this.listed();
     if (this.projects.join("\n") !== this.shared) { this.shared = this.projects.join("\n"); setShared("projects.listed", this.projects); }
-    this.frame = { sp, ps, ag, terms: terminals(), colors: kept, ms: machines(), names: shared("projects.names") ?? {}, options: { ...OPTIONS, ...(shared("sidebar.options") ?? {}) }, byPane: new Map(ag.map((a) => [a.pane, a])), groups: this.assign(sp, ps) };
+    const parents = fleetParents(sp, ps, terms);
+    // Оркестраторы: терминалы, на которые указывают задачи меткой task-fleet.parent.
+    const leads = new Set(terms.filter((k) => k.state === "live" && k.labels?.["task-fleet.parent"]).map((k) => k.labels["task-fleet.parent"]));
+    this.frame = { sp, ps, ag, terms, parents, leads, colors: kept, ms: machines(), names: shared("projects.names") ?? {}, options: { ...OPTIONS, ...(shared("sidebar.options") ?? {}) }, byPane: new Map(ag.map((a) => [a.pane, a])), groups: this.assign(sp, ps, new Set(parents.values())) };
     // Picked sub-rows closed from the selection menu (over9k-menu): once each.
     const closing = shared("over9k.closeSubs");
     if (closing?.at && closing.at !== this.closedAt) { this.closedAt = closing.at; this.closeSubs(closing.list ?? []); this.sel.clear(); }
@@ -2493,9 +2526,10 @@ export default class Spaces extends View {
     const list = this.grouped(t, collapsed);
     this.visible = this.vis;
     // Agents in the order the list shows them (agent.next / prev follow it).
-    const keys = [...(this.drawn ?? []).map((r) => r.w.id), ...this.loose.map((d) => `d:${d}`)];
     const byPaneAgent = this.frame.byPane;
-    const order = keys.flatMap((k) => (this.frame.groups.get(k) ?? []).map((x) => byPaneAgent.get(x.p.pane)?.address).filter(Boolean));
+    const entries = [...(this.drawn ?? []).flatMap((r) => [...this.part(r.w.id, r.main ? "lead" : null), ...(r.tree === "└─" ? this.part(r.under, "rest") : [])]),
+      ...this.loose.flatMap((d) => this.part(`d:${d}`))];
+    const order = entries.map((x) => byPaneAgent.get(x.p.pane)?.address).filter(Boolean);
     if (order.join() !== this.order) { this.order = order.join(); setAgentOrder(order); }
     // Picks of rows that are gone are dropped.
     const alive = new Set([...sp.map((s) => `s:${s.id}`), ...ps.map((p) => `p:${p.pane}`), ...this.loose.map((d) => `d:${d}`), ...this.projects.map((d) => `c:${d}`), ...this.subPicks.keys()]);
