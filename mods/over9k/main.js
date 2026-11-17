@@ -58,6 +58,20 @@ const homeDir = () => (HOME ??= home());
 // A path as it's shown on hover: home as ~.
 const tilde = (path) => { const p = (path ?? "").replace(/\/+$/, ""); return p === homeDir() ? "~" : p.startsWith(homeDir() + "/") ? `~${p.slice(homeDir().length)}` : p; };
 const narrow = () => (find(layout(), "sidebar")?.size?.px ?? Infinity) < 160;
+// A tile's text on the rail: a name ending in a number (a task's worktree,
+// feature-EYE-1589) by that number, else the first letters of two words, or two of one.
+function initials(name) {
+  if (!name || name === "~") return "~";
+  const num = /(\d{2,})$/.exec(name);
+  if (num) return num[1].slice(-4);
+  const words = name.split(/[\s\-_.:/]+/).filter(Boolean);
+  if (words.length > 1) return (words[0][0] + words[1][0]).toUpperCase();
+  const [a = "?", b = ""] = [...(words[0] ?? name)];
+  return a.toUpperCase() + b.toLowerCase();
+}
+// The most urgent status of a few agents: blocked, done, working, then idle.
+const URGENT = ["blocked", "done", "working"];
+const urgent = (list) => URGENT.find((s) => list.some((a) => a?.status === s)) ?? null;
 
 // Where a space is: the folder it was made for, not where its terminals went
 // (they list under the project they're in now, see `assign`), so its row keeps
@@ -1765,6 +1779,21 @@ export default class Spaces extends View {
     return this.loose.filter((d) => listed.has(d) === projects).flatMap((dir) => {
       const key = `d:${dir}`, name = this.alias(dir), g = this.git[JSON.stringify([null, dir])] ?? null;
       this.vis.push(key);
+      if (collapsed) {
+        // On the rail a tile like a space's: a click goes to its first terminal.
+        const terms = this.part(key), first = terms[0];
+        const active = terms.some(({ space }) => space?.active);
+        return [this.railTile(t, {
+          id: `loose-${name}`, name, fill: projects ? MARK[hue(name)] : t.foreground, active,
+          status: urgent(terms.map(({ p }) => this.frame.byPane.get(p.pane))),
+          onClick: () => {
+            if (!first) return;
+            if (first.space && !first.space.active) run("space.select", { id: first.space.id });
+            run("pane.focus", { pane: first.p.pane });
+          },
+          menu: () => this.rightClick(key, () => this.folderMenu(dir)),
+        })];
+      }
       const folded = this.agentsFolded.has(key);
       const row = h_flex().id(`loose-${name}`).h(collapsed ? 26 : 30).flex_none().px(collapsed ? 0 : 8).gap(9).items_center().rounded(8)
         // Папка в списке стоит наравне с пространствами: тот же отступ сверху (SPACE_GAP).
@@ -2134,7 +2163,9 @@ export default class Spaces extends View {
       const connected = !m || machine?.state === "connected";
       const folded = this.folded.has(m);
       // The heading keeps the arrow (it folds on a click); its + gets the hand.
-      const head = h_flex().id(`machine-${m ?? "local"}`).h(31).flex_none().px(collapsed ? 2 : 8).gap(7).items_center().text_size(11.5).text_color(t.dim)
+      const head = h_flex().id(`machine-${m ?? "local"}`).h(31).flex_none().px(collapsed ? 0 : 8).gap(7).items_center().text_size(11.5).text_color(t.dim)
+        // On the rail only the computer's icon, in the middle like the tiles under it.
+        .when(collapsed, (el) => el.justify_center().tooltip(m ?? "This computer"))
         .hover(s => s.bg(t.hover))
         .on_click((_e, cx) => {
           folded ? this.folded.delete(m) : this.folded.add(m);
@@ -2496,18 +2527,36 @@ export default class Spaces extends View {
     return [head, ...(open ? list.map((d) => this.closedRow(d, t, collapsed, m)) : [])];
   }
 
-  compact({ w, i }, t) {
-    return h_flex()
-      .id(`space-${w.id}`)
-      .h(26)
-      .flex_none()
-      .justify_center()
-      .gap(4)
-      .when(w.active, (el) => el.bg(t.raised))
-      .hover((s) => s.bg(t.hover))
-      .on_click(() => run("space.select", { id: w.id }))
-      .child(div().text_color(w.active ? t.foreground : t.muted).child(String(i + 1)))
-      .child(div().text_color(tone(t, w.status)).child(glyph(w.status)));
+  // A space on the rail: a tile with its initials in its project's color, a dot for
+  // its most urgent agent (blocked, done, working; idle has none), its name on hover.
+  // A fleet task's space is a smaller tile, close under its orchestrator's.
+  compact({ w, tree }, t) {
+    this.vis.push(`s:${w.id}`);
+    const name = this.title(w), color = this.frame.colors[w.id];
+    const fill = !color || name === "~" ? t.foreground : color.startsWith("#") ? color : (MARK[color] ?? t[color]);
+    return this.railTile(t, {
+      id: `space-${w.id}`, name, fill, status: w.status, active: w.active, small: Boolean(tree),
+      onClick: () => { if (!w.active) run("space.select", { id: w.id }); },
+      menu: () => this.rightClick(`s:${w.id}`, () => this.menu(w)),
+    });
+  }
+
+  railTile(t, { id, name, fill, status, active, small, onClick, menu }) {
+    const size = small ? 28 : 36;
+    const wash = (a) => (/^#[0-9a-f]{6}$/i.test(fill) ? fill + a : t.raised);
+    const shown = URGENT.includes(status);
+    const tip = shown ? `${name} · ${status}` : name;
+    return h_flex().flex_none().justify_center().mt(small ? 4 : 8)
+      .child(div().id(id).relative().size(size).flex_none().flex().items_center().justify_center().rounded(8).cursor_pointer()
+        .text_size(small ? 10.5 : 12).font_semibold().line_height(`${size}px`).text_color(fill)
+        .bg(wash(active ? "38" : "1a")).when(active, (el) => el.border_1().border_color(fill))
+        .hover((s) => s.bg(wash("2e")))
+        .tooltip(tip)
+        .on_click(onClick)
+        .when(Boolean(menu), (el) => el.on_mouse_down("right", menu))
+        .child(initials(name))
+        .when(shown, (el) => el.child(div().absolute().top(-3).right(-3).size(10).rounded_full()
+          .bg(tone(t, status)).border_2().border_color(t.chrome))));
   }
 
   render() {
