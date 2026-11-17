@@ -1972,8 +1972,9 @@ export default class Spaces extends View {
     openOverlay({ mod: "over9k-menu", kind: "popup", width: 200, height: 291, props: { tab: "space", target: { id: w.id } } });
   }
 
-  // Spaces in order: each orchestrator's space (main) with its fleet tasks' spaces under it
-  // (fleetParents), then the rest. A worktree opened by hand isn't nested.
+  // Spaces in Herdr's order (which dragging sets): an orchestrator's space (main) where it
+  // stands, with its fleet tasks' spaces right under it (fleetParents), in their own order.
+  // A worktree opened by hand isn't nested.
   ordered() {
     const { sp, ps, parents } = this.frame;
     const ready = (w) => this.shown.has(w.id) || where(w, ps) in this.git || Date.now() - (this.born[w.id] ??= Date.now()) > 1500;
@@ -1984,12 +1985,12 @@ export default class Spaces extends View {
     const kidsOf = (id) => list.filter((k) => under(k) === id);
     const out = [];
     for (const r of list) {
-      const kids = under(r) ? [] : kidsOf(r.w.id);
-      if (!kids.length) continue;
+      if (under(r)) continue; // drawn with its main
+      const kids = kidsOf(r.w.id);
+      if (!kids.length) { out.push({ ...r, tree: null }); continue; }
       out.push({ ...r, tree: null, main: true });
       kids.forEach((k, n) => out.push({ ...k, tree: n === kids.length - 1 ? "└─" : "├─", under: r.w.id }));
     }
-    for (const r of list) if (!under(r) && !kidsOf(r.w.id).length) out.push({ ...r, tree: null });
     return out;
   }
 
@@ -2087,11 +2088,9 @@ export default class Spaces extends View {
 
   // The rows, under a heading per computer: This computer always, then each other one.
   grouped(t, collapsed) {
-    // This computer's rows: orchestrators' trees first, as ordered() put them, then ~,
-    // spaces in folders that aren't projects (white), projects, each group in Herdr's order.
-    const listed = new Set(this.projects);
-    const rank = (r) => r.w.machine ? 0 : r.main || r.under ? -1 : (r.w.folder ?? "").replace(/\/+$/, "") === homeDir() ? 0 : listed.has((r.w.folder ?? "").replace(/\/+$/, "")) ? 2 : 1;
-    const rows = this.drawn = this.ordered().map((r, n) => ({ r, n })).sort((a, b) => (a.r.w.machine ? 0 : rank(a.r)) - (b.r.w.machine ? 0 : rank(b.r)) || a.n - b.n).map((x) => x.r);
+    // Пространства в порядке Herdr, как ordered() их выложил: этот порядок задаёт перетаскивание
+    // (row), поэтому список его не пересортировывает.
+    const rows = this.drawn = this.ordered();
     if (this.filter === "agents" && this.agentsBy === "state" && !collapsed) return this.agentSections(t, rows);
     // A worktree folds away with its main space (under).
     const on = Boolean(this.filter);
@@ -2118,7 +2117,6 @@ export default class Spaces extends View {
     // Строки деревьев не дом: оркестратор на ~ не тянет за собой строки папок.
     const atHome = (r) => !r.w.machine && !r.main && !r.under && (r.w.folder ?? "").replace(/\/+$/, "") === homeDir();
     const homeAt = rows.findIndex(atHome);
-    const trees = rows.filter((r) => !r.w.machine && (r.main || r.under)).length;
     // Прочие терминалы пространства оркестратора идут после его последней задачи: к ним они не относятся.
     const rest = (r) => (r.tree === "└─" && !collapsed && (on || !this.agentsFolded.has(r.under)) ? this.termRows(r.under, t, 0, "rest") : []);
     const drawAll = (list) => list.flatMap((r) => [...draw(r), ...rest(r), ...(r === rows[homeAt] ? others() : [])]);
@@ -2152,7 +2150,7 @@ export default class Spaces extends View {
             .child(svg("mods/workspace-chrome/plus.svg").size(12)))));
       this.spaceCount = 0; // первое пространство под заголовком компьютера идёт без отступа (row)
       const drawn = m ? [...(on ? [] : this.sshRows(m, t)), ...mine.flatMap(draw), ...busy(m)]
-        : [...drawAll(mine.slice(0, trees)), ...(homeAt < 0 ? others() : []), ...drawAll(mine.slice(trees))];
+        : [...(homeAt < 0 ? others() : []), ...drawAll(mine)];
       const extra = on ? [] : m ? this.closedSection(t, collapsed, m) : closed();
       // Filtered: a computer with nothing that passes isn't listed at all.
       if (on && !drawn.length) return [];
@@ -2282,7 +2280,7 @@ export default class Spaces extends View {
     setShared("over9k.recentAgents", next);
   }
 
-  row({ w, i, g, tree }, t) {
+  row({ w, i, g, tree, under = null }, t) {
     this.vis.push(`s:${w.id}`);
     const on = w.active;
     const color = this.frame.colors[w.id];
@@ -2310,10 +2308,13 @@ export default class Spaces extends View {
       .on_mouse_down("left", () => {
         this.pressed = i;
         this.over = i;
+        this.pressedUnder = under;
       })
       .on_mouse_move((_e, cx) => {
+        // Сброс только рядом с тем же уровнем на том же компьютере: пространство (с деревом
+        // целиком) среди пространств, задача среди задач своего оркестратора.
         const source = spaces()[this.pressed];
-        const over = source && (source.machine ?? null) === (w.machine ?? null) ? i : null;
+        const over = source && (source.machine ?? null) === (w.machine ?? null) && this.pressedUnder === under ? i : null;
         if (this.pressed !== null && this.over !== over) {
           this.over = over;
           cx.notify();
