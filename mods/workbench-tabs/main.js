@@ -1,15 +1,21 @@
 import { View, div, svg, image } from "gpui-kit";
 import { h_flex, ScrollHandle } from "gpui-base";
-import { spaces, panes, run, openOverlay, theme, window, layout, settings, props, nextCommand } from "herdr";
+import { spaces, panes, run, openOverlay, theme, window, layout, settings, props, nextCommand, shared, setShared } from "herdr";
 import { squareCorners } from "./square.js";
 
 // Клон вкладок Herdr 0.1.15: кнопки боковых панелей задаёт раскладка (props.panels),
 // а `workbench-tabs.<id>` из keys.json открывает и закрывает панель с этим id.
+// props.aliases: прежние id, ведущие внутрь панели со своим stack, например
+// { "changes": { "panel": "git", "stack": "git", "view": "review", "scope": "work" } }.
+// props.views: { stack, default }, вид внутри такой панели, запоминается по пространствам.
 const DEFAULT_PANELS = [
   { id: "files", label: "Files", icon: "mods/files/file.svg" },
   { id: "changes", label: "Changes", icon: "mods/changes/changes.svg" },
 ];
 const panelsOf = () => props()?.panels ?? DEFAULT_PANELS;
+const aliasOf = (id) => props()?.aliases?.[id] ?? null;
+// Вкладка Git: просьба о режиме Review и то, что Review показывает (mods/reviewer).
+const WANT = "git.want", CURRENT = "reviewer.current";
 
 function find(node, id) {
   if (node?.id === id) return node;
@@ -26,16 +32,55 @@ export default class Tabs extends View {
     this.pressed = null;
     this.scroll = ScrollHandle.new();
     this.panels = JSON.parse(localStorage.getItem("panels") ?? "{}");
+    this.views = JSON.parse(localStorage.getItem("views") ?? "{}");
     cx.spawn(async (cx) => {
       for (;;) { this.togglePanel(await nextCommand()); cx.notify(); }
     });
   }
 
   togglePanel(id) {
-    if (!panelsOf().some(p => p.id === id)) return;
+    const alias = aliasOf(id), target = alias?.panel ?? id;
+    if (!panelsOf().some(p => p.id === target)) return;
     const root = layout(), panel = find(root, "panel"), body = find(root, "panel-body");
-    if (panel && !panel.hidden && body?.active === id) run("layout.hide", { id: "panel" });
-    else { run("layout.select", { stack: "panel-body", child: id }); run("layout.show", { id: "panel" }); }
+    const open = panel && !panel.hidden && body?.active === target;
+    if (alias?.stack && alias.view) {
+      // Псевдоним закрывает панель, только если уже открыт его же вид (и его режим Review);
+      // иначе переключает. Режим уходит через shared: команды до скрытой панели не доходят.
+      const current = shared(CURRENT);
+      const same = find(root, alias.stack)?.active === alias.view
+        && (!alias.scope || current?.scope === alias.scope || current?.refused === alias.scope);
+      if (open && same) { run("layout.hide", { id: "panel" }); return; }
+      if (alias.scope) setShared(WANT, { scope: alias.scope, at: Date.now() });
+      run("layout.select", { stack: alias.stack, child: alias.view });
+      run("layout.select", { stack: "panel-body", child: target }); run("layout.show", { id: "panel" });
+      return;
+    }
+    if (open) run("layout.hide", { id: "panel" });
+    else { run("layout.select", { stack: "panel-body", child: target }); run("layout.show", { id: "panel" }); }
+  }
+
+  // The view inside a stacked panel (props.views), remembered per space as the
+  // panel is: Herdr keeps one choice of a stack's child for every space.
+  syncView(space, root) {
+    const conf = props()?.views, stack = conf?.stack ? find(root, conf.stack) : null;
+    if (!space || !stack) return;
+    const ids = (stack.children ?? []).map(c => c.id), now = stack.active ?? ids[0] ?? null;
+    if (space.id !== this.viewSpace) {
+      this.viewSpace = space.id;
+      const stored = this.views[space.id], want = ids.includes(stored) ? stored : ids.includes(conf.default) ? conf.default : null;
+      if (want && want !== now) {
+        this.viewPending = { want, until: Date.now() + 1000 };
+        run("layout.select", { stack: conf.stack, child: want });
+        return;
+      }
+    }
+    if (this.viewPending) {
+      if (this.viewPending.want !== now && Date.now() < this.viewPending.until) return;
+      this.viewPending = null;
+    }
+    if (this.views[space.id] === now) return;
+    this.views[space.id] = now;
+    localStorage.setItem("views", JSON.stringify(this.views));
   }
 
   // The side panel is remembered per space: switching shows that space's choice
@@ -52,7 +97,9 @@ export default class Tabs extends View {
       const fallback = enabled.includes(props()?.defaultPanel) ? props().defaultPanel : null;
       this.space = space.id; this.pending = null;
       if (!(first && !seen && !fallback)) {
-        const stored = seen ? this.panels[space.id] ?? null : fallback, want = enabled.includes(stored) ? stored : null;
+        // Панель, сохранённая под прежним id (changes, review, graph), открывается тем, во что он ведёт.
+        const saved = seen ? this.panels[space.id] ?? null : fallback, stored = aliasOf(saved)?.panel ?? saved;
+        const want = enabled.includes(stored) ? stored : null;
         if (want !== now || interrupted) {
           this.pending = { want, until: Date.now() + 1000 };
           if (want) { run("layout.select", { stack: "panel-body", child: want }); run("layout.show", { id: "panel" }); }
@@ -114,6 +161,7 @@ export default class Tabs extends View {
     const panel = find(root, "panel"), body = find(root, "panel-body");
     const panels = panelsOf(), enabled = panels.map(p => p.id);
     this.syncPanel(space, panel, body, enabled);
+    this.syncView(space, root);
     const panelButton = (id, label, icon) => {
       const on = panel && !panel.hidden && body?.active === id;
       return h_flex().id(`panel-${id}`).h(26).px(8).gap(6).flex_none().items_center().rounded(6)

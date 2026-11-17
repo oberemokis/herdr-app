@@ -67,14 +67,7 @@ export function parseRepoStatus(stdout) {
   return s;
 }
 
-// A background fetch, as manygit runs it: saved credentials and SSH's own
-// configuration still work, but nothing may stop to ask for a login. Git tries
-// askpass before GIT_TERMINAL_PROMPT, so an empty GIT_ASKPASS goes with it.
-export const FETCH = ["GCM_INTERACTIVE=0", "GIT_TERMINAL_PROMPT=0", "GIT_ASKPASS=", "git", "fetch", "--quiet"];
-// Worth fetching: a repository that has a remote, or isn't read yet.
-export const fetchable = (st) => !st || st.error || Boolean(st.upstream || st.hasRemote);
-
-// A repository's remotes and their URLs, for the row's menu (Push, the web page).
+// A repository's remotes and their URLs, for the row's menu (Fetch, the web page).
 export const REMOTES = [...READ, "config", "--get-regexp", "^remote\\..*\\.url$"];
 export function parseRemotes(stdout) {
   return stdout.split("\n").map((l) => /^remote\.(.+)\.url (.+)$/.exec(l.trim())).filter(Boolean).map((m) => ({ name: m[1], url: m[2] }));
@@ -97,9 +90,8 @@ export function webUrl(url) {
 export const LATEST_TAG = [...READ, "for-each-ref", "--count=1", "--sort=-creatordate", "--format=%(refname:short)", "refs/tags"];
 
 // What a row says of its upstream (manygit's states; drawn in Herdr's colors).
-export function syncOf(st, fetchError) {
+export function syncOf(st) {
   if (!st) return { kind: "loading", text: "…" };
-  if (fetchError) return { kind: "error", text: "fetch failed" };
   if (st.error) return { kind: "error", text: "!" };
   // A detached HEAD has no branch to push: the branch column already says "detached".
   if (st.detached) return { kind: "ok", text: "" };

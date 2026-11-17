@@ -26,7 +26,9 @@
 // picks it up on its next refresh, selects the file (or notes that it has no
 // diff in the shown scope) and clears the key. `path` may be the repo folder
 // itself, to select no file; `ref` (a commit-ish) switches to reviewing that
-// commit on its own first. A request older than OPEN_TTL
+// commit on its own first, `scope` ("work", "last", "branch") to that scope. With
+// `from: "graph"` the switch is a visit: the remembered scope stays, and Esc or
+// "‹ Graph" goes back to it and to the graph. A request older than OPEN_TTL
 // is dropped unread, so a stale one never fires when the repo gets focus later.
 // The header's scope picker chooses what is reviewed: the uncommitted
 // changes, the last commit plus them, everything on the branch since it
@@ -37,22 +39,36 @@
 //          base: the branch reviews are against (default: origin/HEAD, else main, else master) }.
 import { View, div, svg } from "gpui-kit";
 import { v_flex, h_flex, TextareaState, Textarea, Scrollbar, v_virtual_list, VirtualListScrollHandle, Popover } from "gpui-base";
-import { spaces, panes, focused, exec, readTextFile, watchFolder, theme, settings, nextCommand, props, shared, setShared } from "herdr";
+import { spaces, panes, focused, exec, readTextFile, watchFolder, theme, settings, nextCommand, props, shared, setShared, run } from "herdr";
 import { squareCorners } from "./square.js";
 import { tokenize, languageOf } from "./highlight.js";
 import { ask } from "./ask.js";
 import { palette } from "./palette.js";
 import { Dialog } from "./dialog.js";
+import { GIT_STACK, inGitTab, viewSwitch } from "./switch.js";
 
+// The focused terminal's folder. A mod pane (the diff tab in the centre) has
+// none: the panel stays on the last terminal's repository in that space, so
+// moving to the diff neither switches repositories nor drops a typed comment.
+let last = null;
 function location() {
   const space = spaces().find((s) => s.active), f = focused();
   const pane = f?.pane ? panes().find(p => p.pane === f.pane) : null;
+  if (pane && pane.terminal === null && last && last.space === space?.id) return last.at;
   const on = f?.pane === null ? (f.terminal?.includes("/") ? f.terminal.split("/")[0] : null) : space?.machine ?? null;
-  return { cwd: pane?.cwd || f?.cwd || space?.folder, on };
+  const at = { cwd: pane?.cwd || f?.cwd || space?.folder, on };
+  last = { space: space?.id, at };
+  return at;
 }
 const key = () => JSON.stringify(location());
 const countLines = (text) => text ? text.split("\n").length - Number(text.endsWith("\n")) : 0;
 const NONE = "#00000000", SENT = "reviewer.sent", DRAFTS = "reviewer.drafts", SCOPE = "reviewer.scope";
+// The Git tab's glue (workbench-tabs, git-graph, over9k): "git.want" { scope, at }
+// asks for a scope (a key, a sidebar count), "reviewer.current" { scope, refused? }
+// says what shows, and "git-graph.changed" moves after the graph's Fetch.
+const WANT = "git.want", CURRENT = "reviewer.current", GRAPH_CHANGED = "git-graph.changed";
+// A diff ref the centre tab may be handed: HEAD, a commit id, either one's parent.
+const CENTRE_REF = /^(HEAD|[0-9a-f]{7,64})(~\d+)?$/;
 // The review scopes, in picker order; "commit" (one picked commit vs its
 // parent) is chosen from the log, not cycled. A scope's id is its name, or
 // "commit:<sha>" for a picked commit: the id keys the remembered scope and the drafts.
@@ -147,6 +163,9 @@ export default class Changes extends View {
     this.note.on("submit", (e, cx) => { if (!e?.shift) this.addComment(cx); });
     this.note.on("change", (_e, cx) => { this.noteText = this.note.value(); if (this.composer?.editing) this.rebuild(); cx.notify(); });
     this.noteText = "";
+    // Opened from the graph: { id } of the scope to go back to (null: the default one).
+    this.back = null;
+    this.seenWant = null; this.seenGraphChange = shared(GRAPH_CHANGED);
     this.refresh(cx);
     cx.timer.every(10000, (cx) => this.refresh(cx));
     cx.spawn(async (cx) => {
@@ -183,7 +202,7 @@ export default class Changes extends View {
     this.tried = request?.id ?? this.tried;
     if (context !== this.context) {
       this.context = context; this.root = null; this.log = null; this.files = []; this.open = null; this.comments = []; this.composer = null;
-      this.setLines([]); this.error = null; this.note_ = null; this.watched = null; this.closed = false; this.limited = false;
+      this.setLines([]); this.error = null; this.note_ = null; this.watched = null; this.closed = false; this.limited = false; this.back = null;
     }
     if (!cwd) return;
     this.loading = true;
@@ -200,14 +219,18 @@ export default class Changes extends View {
         // The scope in use (remembered per repo), and what this repo offers.
         // A request for a commit (`ref`) picks that commit's scope, as a click in the list would.
         const scopeKey = `${on ?? ""}:${root}`, requested = this.requestedFile(request, root, on);
-        let wanted = null, refNote = null;
+        let wanted = null, forced = null, refNote = null;
+        const visit = requested !== null && request.from === "graph";
+        const remember = (id) => { if (!visit) setShared(SCOPE, { ...(shared(SCOPE) ?? {}), [scopeKey]: id }); };
         if (requested !== null && typeof request.ref === "string" && request.ref) {
           const r = hasHead && !request.ref.startsWith("-") ? await git(["rev-parse", "--verify", "-q", `${request.ref}^{commit}`]) : null;
-          if (r?.code === 0) { wanted = r.stdout.trim(); setShared(SCOPE, { ...(shared(SCOPE) ?? {}), [scopeKey]: `commit:${wanted}` }); }
+          if (r?.code === 0) { wanted = r.stdout.trim(); remember(`commit:${wanted}`); }
           else refNote = `Requested commit ${request.ref} isn't in this repo.`;
-        }
+        } else if (requested !== null && SCOPES.includes(request.scope)) { forced = request.scope; remember(forced); }
         const remembered = (shared(SCOPE) ?? {})[scopeKey];
-        let [scope, sha] = wanted ? ["commit", wanted] : root === this.root ? [this.scope, this.sha] : remembered?.startsWith("commit:") ? ["commit", remembered.slice(7)] : [remembered ?? null, null];
+        // A visit from the graph keeps what showed before it, for going back.
+        if (visit && (wanted || forced) && !this.back) this.back = { id: root === this.root ? this.scopeId() : remembered ?? null };
+        let [scope, sha] = wanted ? ["commit", wanted] : forced ? [forced, null] : root === this.root ? [this.scope, this.sha] : remembered?.startsWith("commit:") ? ["commit", remembered.slice(7)] : [remembered ?? null, null];
         const info = hasHead ? await this.scopes(git, scope === "commit" ? sha : null) : { branch: null, base: null, last: null, merge: null, commit: null };
         if (!scope) scope = info.merge ? "branch" : "work";
         if (scope === "branch" && !info.merge) scope = "work";
@@ -269,6 +292,8 @@ export default class Changes extends View {
           } else this.note_ = null;
           if (refNote) this.note_ = refNote;
           if (shared(OPEN)?.id === request.id) setShared(OPEN, null);
+          // Esc goes back to the graph, so the keys come here.
+          if (visit) this.handle.focus();
         }
         if (this.open && !files.some((f) => f.path === this.open)) { this.open = null; this.setLines([]); }
         // The first file's diff shows until you pick another.
@@ -278,8 +303,59 @@ export default class Changes extends View {
           catch { if (key() === context) this.setLines(["Cannot preview this diff (too large or unreadable)"]); }
         }
       } catch (e) { if (key() === context) this.error = String(e); }
-      finally { this.loading = false; cx.notify(); }
+      finally { this.loading = false; this.publishScope(); cx.notify(); }
     });
+  }
+
+  // What shows, for a key that toggles the panel: the same scope again closes it.
+  // `refused`: a scope asked for that this repo doesn't offer, so asking again closes too.
+  publishScope(refused = null) {
+    const old = shared(CURRENT), now = { scope: this.root ? this.scope : null };
+    const keep = refused ?? (old?.scope === now.scope ? old?.refused : null);
+    if (keep) now.refused = keep;
+    if (JSON.stringify(old) !== JSON.stringify(now)) setShared(CURRENT, now);
+  }
+
+  // "git.want": a key or a sidebar count asks for a scope; it becomes the remembered one.
+  applyWant(scope, cx) {
+    const i = this.scopeInfo ?? {};
+    const ok = scope === "work" || (scope === "last" ? Boolean(i.last) : scope === "branch" ? Boolean(i.merge) : false);
+    this.back = null;
+    if (!ok) {
+      this.note_ = scope === "branch" ? (i.base ? `No branch diff: this is ${i.base} itself.` : "No branch diff: no base branch found.") : null;
+      this.publishScope(scope); cx.notify(); return;
+    }
+    this.setScope(scope, cx);
+  }
+
+  // Back from a visit: the scope that showed before it, then the graph.
+  goBack(cx) {
+    const back = this.back;
+    this.back = null;
+    if (back?.id?.startsWith("commit:")) this.setScope("commit", cx, back.id.slice(7));
+    else this.setScope(back?.id ?? (this.scopeInfo?.merge ? "branch" : "work"), cx);
+    run("layout.select", { stack: GIT_STACK, child: "graph" });
+  }
+
+  // The open file's diff in the centre tab Better Changes draws (inline or side by
+  // side, the whole file), handed over as Better Files does. It stays live: the tab
+  // reads `git diff <ref> -- <file>` again as the file changes; a commit is its own.
+  openInCentre(path, cx) {
+    const space = spaces().find((s) => s.active), file = this.files.find((f) => f.path === path), i = this.scopeInfo ?? {};
+    if (!space || !file || !this.root || !this.hasHead) return;
+    const source = { cwd: this.root, on: this.on ?? null };
+    const selection = { context: JSON.stringify(source), root: this.root, on: this.on ?? null, path, at: Date.now(),
+      file: { path, status: file.status, add: file.add, del: file.del, binary: Boolean(file.binary), fresh: Boolean(file.fresh) } };
+    if (this.scope === "commit" && i.commit) Object.assign(selection, { scope: "commit", commit: { hash: i.commit.sha, short: i.commit.short, subject: i.commit.subject } });
+    else if (CENTRE_REF.test(this.range[0] ?? "")) Object.assign(selection, { scope: "ref", ref: this.range[0], label: this.scopeLabel() });
+    else return;
+    const entries = shared("better-changes.diff-tabs") ?? {}, ids = new Set((space.tabs ?? []).map((t) => t.id));
+    const tab = panes().find((p) => p.mod === "better-changes" && ids.has(p.tab))?.tab, name = path.split("/").pop();
+    setShared("better-changes.selection", selection);
+    setShared("better-changes.diff-tabs", { ...entries, [space.id]: { source, selection, pending: tab ? null : Date.now() } });
+    if (tab) { run("tab.rename", { id: tab, name }); run("tab.select", { id: tab }); }
+    else run("tab.new", { space: space.id, name, mod: "better-changes", props: { mode: "diff", space: space.id, source, selection } });
+    cx.notify();
   }
 
   // A request's path relative to the repo `root` on machine `on` ("" for the
@@ -322,9 +398,11 @@ export default class Changes extends View {
     const own = branch && branch !== "HEAD" ? await out(["config", "--get", `branch.${branch}.base`]) : null;
     const known = async (b) => (await out(["rev-parse", "--verify", "-q", `refs/remotes/origin/${b}`])) !== null
       || (await out(["rev-parse", "--verify", "-q", `refs/heads/${b}`])) !== null;
-    let base = own && (await known(own)) ? own : fallback;
+    // Общая база тоже проверяется: без неё в репозитории (нет dev) режим «ветка» молча пропадал.
+    // То же правило в git-graph (readFolder), чтобы граф выделял ту же базу.
+    let base = own && (await known(own)) ? own : (fallback && (await known(fallback)) ? fallback : null);
     if (!base) { const h = await out(["symbolic-ref", "-q", "refs/remotes/origin/HEAD"]); if (h) base = h.replace(/^refs\/remotes\/origin\//, ""); }
-    if (!base) for (const b of ["main", "master"]) { if (await out(["rev-parse", "--verify", "-q", `refs/heads/${b}`]) !== null) { base = b; break; } }
+    if (!base) for (const b of ["main", "master"]) { if (await known(b)) { base = b; break; } }
     let merge = null;
     if (base && branch !== base) {
       // Сначала origin: локальная база в основной папке отстаёт, и в дифф попали бы чужие коммиты.
@@ -360,12 +438,15 @@ export default class Changes extends View {
       : "uncommitted changes";
   }
   // `sha`: the commit, for the "commit" scope.
+  // Picking a scope ends a visit from the graph: what is picked is what is remembered.
   setScope(scope, cx, sha = null) {
     const id = this.scopeId(scope, sha);
-    if (!this.root || id === this.scopeId()) { this.choosingScope = false; cx.notify(); return; }
+    this.back = null;
+    if (!this.root || id === this.scopeId()) { this.choosingScope = false; this.publishScope(); cx.notify(); return; }
     const all = { ...(shared(SCOPE) ?? {}) }; all[`${this.on ?? ""}:${this.root}`] = id; setShared(SCOPE, all);
     this.scope = scope; this.sha = sha; this.choosingScope = false; this.composer = null; this.setLines([]);
     this.comments = this.loadDrafts(id); this.rebuild();
+    this.publishScope();
     this.refresh(cx); cx.notify();
   }
   // From a picked commit, the next scope is Uncommitted.
@@ -737,6 +818,15 @@ export default class Changes extends View {
     const request = shared(OPEN);
     if (request != null && this.stale(request)) cx.timer.after(1, () => setShared(OPEN, null));
     else if (key() !== this.context || (request?.id !== this.tried && this.requestedFile(request) !== null)) this.refresh(cx);
+    // A scope asked for by a key or a sidebar count, once this repo's scopes are known.
+    const want = shared(WANT);
+    if (want?.at && want.at !== this.seenWant && this.scopeInfo && this.root && !this.loading) {
+      this.seenWant = want.at;
+      if (Date.now() - want.at < OPEN_TTL) cx.timer.after(1, (cx) => this.applyWant(want.scope, cx));
+    }
+    // The graph fetched: the base on origin may have moved, and the branch diff with it.
+    const graphChange = shared(GRAPH_CHANGED);
+    if (graphChange !== this.seenGraphChange) { this.seenGraphChange = graphChange; cx.timer.after(1, (cx) => this.refresh(cx)); }
     const size = codeSize();
     if (size !== this.fontSize) { this.fontSize = size; this.row = rowOf(size); this.measure(); }
     // "Full file" may have been switched in another copy of the panel.
@@ -745,7 +835,7 @@ export default class Changes extends View {
     const sentAt = shared(SENT);
     if (this.submitting && typeof sentAt === "number" && sentAt >= this.submitting) { this.submitting = null; cx.timer.after(1, (cx) => this.setComments([], cx)); }
     const t = theme(), colors = palette(props()?.palette, t), add = this.files.reduce((n, f) => n + f.add, 0), del = this.files.reduce((n, f) => n + f.del, 0);
-    const target = this.target(), n = this.comments.length, canAsk = Boolean(this.open && this.rows.length);
+    const target = this.target(), n = this.comments.length, canAsk = Boolean(this.open && this.rows.length), git = inGitTab();
     const commented = new Set();
     for (const it of this.items) if (it.kind === "comment") for (let j = it.from; j <= it.to; j++) commented.add(j);
     const perFile = {};
@@ -756,11 +846,15 @@ export default class Changes extends View {
       .on_size_change((size, cx) => { const w = this.size?.width; this.size = size; if (w !== size.width) { this.rebuild(); cx.notify(); } })
       .on_key_down((e, cx) => {
         if (e.key === "escape" && this.composer) { this.closeComposer(cx); cx.stop_propagation(); }
+        else if (e.key === "escape" && this.back) { this.goBack(cx); cx.stop_propagation(); }
         else if (e.key === "enter" && (e.modifiers?.platform || e.modifiers?.control) && this.composer) { this.addComment(cx); cx.stop_propagation(); }
       })
       .child(h_flex().h(32).flex_none().px(14).gap(8).items_center().border_b(1).border_color(t.border)
-        .child(div().font_semibold().child("Changes"))
-        .child(div().h(24).px(8).flex().items_center().rounded(6).border_1().border_color(t.border).text_size(12).text_color(t.muted).child(`${this.files.length} files`))
+        // In the Git tab the Review | Graph switch stands where the title was; the file count is in the list.
+        .when(git, (e) => e.child(viewSwitch(t, "review")))
+        .when(!git, (e) => e.child(div().font_semibold().child("Changes"))
+          .child(div().h(24).px(8).flex().items_center().rounded(6).border_1().border_color(t.border).text_size(12).text_color(t.muted).child(`${this.files.length} files`)))
+        .when(Boolean(this.back), (e) => e.child(link("review-back", "‹ Graph", (_e, cx) => this.goBack(cx)).tooltip("Back to the graph (Esc)")))
         .when(Boolean(this.root) && this.hasHead, (e) => e.child(this.scopePicker(t)))
         .child(div().flex_1())
         // Full file: the icon shows what a click does (unfold when folded, fold when the whole file shows).
@@ -783,10 +877,20 @@ export default class Changes extends View {
             .tooltip(k ? `${k} draft comment${k > 1 ? "s" : ""} · click to comment on the whole file` : "Comment on the whole file")
             .on_click((_e, cx) => { cx.stop_propagation(); this.commentFile(f.path, cx); })
             .when(Boolean(k), (e) => e.child(String(k))).child(svg("mods/reviewer/comment.svg").size(k ? 10 : 12)))
+          // The open file: its diff in the centre, wide, inline or side by side.
+          .when(this.open === f.path && this.hasHead, (e) => e.child(div().id(`open-centre-${f.path}`).size(18).flex_none().flex().items_center().justify_center().rounded(4).cursor_pointer()
+            .text_color(t.muted).hover((s) => s.bg(t.hover).text_color(t.foreground)).tooltip("Open in the centre: inline or side by side, the whole file")
+            .on_click((_e, cx) => { cx.stop_propagation(); this.openInCentre(f.path, cx); }).child(svg("mods/reviewer/external.svg").size(12))))
           .when(f.add > 0, (e) => e.child(div().text_size(11).text_color(t.ansi2).child(`+${f.add}`))).when(f.del > 0, (e) => e.child(div().text_size(11).text_color(t.ansi1).child(`−${f.del}`)));
-      })).when(!this.files.length, (e) => e.child(div().p(8).text_color(t.dim).child(this.error || (this.loading ? "Loading changes…" : !this.root ? "No folder" : this.scope === "work" ? "No uncommitted changes" : "No changes in this scope")))))
-      .when(this.limited, el => el.child(div().px(12).py(4).text_size(11).text_color(t.dim).child("Showing the first 1,000 changed files")))
-      .child(h_flex().flex_1().min_h(0).items_stretch()
+      // Пустое состояние как во всех панелях workbench: текст 12, 14 от края (6 списка и 8 свои),
+      // серый; красный только у сбоя, а «не репозиторий» не сбой.
+      })).when(!this.files.length, (e) => e.child(div().p(8).text_size(12).whitespace_normal()
+        .text_color(this.error && this.error !== "Not a git repository" ? t.ansi1 : t.dim)
+        .child(this.error || (this.loading ? "Loading changes…" : !this.root ? "No folder" : this.scope === "work" ? "No uncommitted changes" : "No changes in this scope")))))
+      .when(this.limited, el => el.child(div().px(14).py(4).text_size(12).text_color(t.dim).child("Showing the first 1,000 changed files")))
+      .child(h_flex().flex_1().min_h(0).items_stretch().relative()
+        // Вне блока с моноширинным шрифтом диффа: подсказка того же вида, что пустые состояния.
+        .when(!this.open && this.files.length > 0, (e) => e.child(div().absolute().top(14).left(14).right(14).text_size(12).text_color(t.dim).child("Select a file to view its changes")))
         .child(div().flex_1().min_w(0).min_h(0).relative().font_family(codeFont()).text_size(this.fontSize)
         .child(div().id("changes-diff-x").size_full().overflow_x_scrollbar()
           .child(div().w_full().min_w(this.diffWidth).h_full().child(v_virtual_list("changes-diff", this.items.length, this.sizes.length ? this.sizes : this.row, (i) => this.items[i].key,
@@ -794,14 +898,15 @@ export default class Changes extends View {
             .on_item_click((k, cx) => { if (k.startsWith("f:")) this.unfold(Number(k.slice(2)), cx); else if (k.startsWith("c:")) { if (k.slice(2) !== this.composer?.editing) this.editComment(k.slice(2), cx); } else this.clickRow(Number(k.slice(2)), cx); })
             .on_item_secondary_click((k, _e, cx) => { if (!k.startsWith("r:")) return; const i = Number(k.slice(2)); const r = this.rows[i]; if (!r || r.kind === "") return; this.askAbout(r.kind === "@" ? this.rows.map((_r, j) => j).filter((j) => this.rows[j].hunk === i && this.rows[j].kind !== "") : [i], cx); }))))
         .child(Scrollbar.vertical("changes-diff").viewport_from_layout().absolute().inset_0())
-        .when(!this.open && this.files.length > 0, (e) => e.child(div().absolute().top(6).px(12).text_color(t.dim).child("Select a file to view its changes")))
         .when(canAsk && !this.composer && n === 0, (e) => e.child(div().absolute().bottom(6).right(14).px(8).py(3).rounded(6).bg(t.raised + "e0").text_size(10).text_color(t.dim).child("Click a line to comment · right-click to ask"))))
         // The comment box, a card floating over the top-right of the diff while it is open (a strip below it on a narrow panel).
         .when(Boolean(this.composer) && !this.narrow(), (e) => e.child(this.box(t, target, false))))
       // Narrow panel: the comment box is a strip under the diff instead of a column beside it.
       .when(Boolean(this.composer) && this.narrow(), (e) => e.child(this.box(t, target, true)))
       // Поля коммита нет: коммитит агент по маршруту задачи, панель только ревьюит.
-      .when(Boolean(this.note_), (e) => e.child(div().px(10).pb(8).text_size(11).text_color(t.ansi1).child(this.note_)));
+      // Красным только сбой (не ушло, не прочиталось); «нет диффа в этом режиме» серым.
+      .when(Boolean(this.note_), (e) => e.child(div().px(14).py(8).text_size(12).whitespace_normal()
+        .text_color(/^(Ask failed|Submit failed|Cannot)/.test(this.note_) ? t.ansi1 : t.dim).child(this.note_)));
   }
 
   pick(path, cx) {

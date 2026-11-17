@@ -1,13 +1,13 @@
 // The right-click menu, opened as a popup at the pointer with props
 // { role: "menu", target, ctx }. Styled like Herdr's own menu.
-import { div, svg, image } from "gpui-kit";
+import { div, svg } from "gpui-kit";
 import { v_flex, h_flex } from "gpui-base";
-import { props, closeOverlay, notify, theme, run } from "herdr";
+import { props, closeOverlay, notify, theme } from "herdr";
 import { menuFor } from "./git.js";
-import { perform, openDialog, showChanges } from "./act.js";
+import { perform } from "./act.js";
 
-// A glyph of this mod, or another mod's icon by its path (Herdr's own Changes icon).
-export const icon = (name) => (name.includes("/") ? name : `mods/git-graph/icons/${name}.svg`);
+// A glyph of this mod.
+export const icon = (name) => `mods/git-graph/icons/${name}.svg`;
 
 export class Menu {
   init(cx) {
@@ -20,28 +20,19 @@ export class Menu {
 
   choose(i, cx) {
     const it = this.items[i], { overlay, ctx } = props();
-    if (!it || it.separator || this.busy) return;
+    if (!it || it.separator || this.busy !== undefined) return;
     const a = it.action;
-    if (a.type === "newTab") {
-      // As Herdr's + menu: a tab in the selected space, here in the repository.
-      closeOverlay(overlay);
-      run("tab.new", { folder: a.folder, ...(a.argv ? { name: a.name, argv: a.argv } : {}) });
-    } else if (a.type === "openUrl") {
+    if (a.type === "openUrl") {
       closeOverlay(overlay);
       cx.open_url(a.url);
     } else if (a.type === "copy") {
       cx.write_to_clipboard(a.text);
       closeOverlay(overlay);
       notify({ title: "Copied", body: a.text, level: "success", timeout: 2000 });
-    } else if (a.type === "showChanges") {
-      closeOverlay(overlay);
-      showChanges();
-    } else if (openDialog(a, ctx)) {
-      closeOverlay(overlay);
-    } else {
+    } else if (a.type === "fetch") {
       // Runs here, then closes: a closed popup's tasks would be cancelled.
       this.busy = i;
-      cx.spawn(async (cx) => { await perform(a, {}, ctx); closeOverlay(overlay); cx.notify(); });
+      cx.spawn(async (cx) => { await perform(a, ctx); closeOverlay(overlay); cx.notify(); });
     }
     cx.notify();
   }
@@ -68,12 +59,10 @@ export class Menu {
       })
       .children(this.items.map((it, i) => it.separator
         ? div().mx(7).my(4).h(1).flex_none().bg(t.border)
-        : h_flex().id(`gm-${i}`).h(30).flex_none().px(8).gap(9).rounded(7).items_center().cursor_pointer()
-          .text_color(it.action.type.startsWith("delete") ? t.ansi1 : t.foreground)
+        : h_flex().id(`gm-${i}`).h(30).flex_none().px(8).gap(9).rounded(7).items_center().cursor_pointer().text_color(t.foreground)
           .when(i === this.at || this.busy === i, (el) => el.bg(t.selected)).hover((s) => s.bg(t.hover))
           .on_click((_e, cx) => this.choose(i, cx))
-          // An agent's own icon keeps its colors when it isn't drawn tinted.
-          .child(it.image ? image(it.icon).size(14).flex_none() : svg(icon(it.icon)).size(14).flex_none().text_color(it.action.type.startsWith("delete") ? t.ansi1 : t.muted))
+          .child(svg(icon(it.icon)).size(14).flex_none().text_color(t.muted))
           .child(div().flex_1().min_w(0).truncate().child(this.busy === i ? "Working…" : it.label))));
   }
 }

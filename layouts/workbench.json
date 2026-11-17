@@ -84,15 +84,19 @@
           "content": {
             "mod": "workbench-tabs",
             "props": {
-              "defaultPanel": "review",
+              "defaultPanel": "git",
               "panels": [
                 { "id": "files", "label": "Files", "icon": "mods/better-files/icons/file.svg" },
-                { "id": "changes", "label": "Changes", "icon": "mods/changes/changes.svg" },
-                { "id": "review", "label": "Review", "icon": "mods/reviewer/comment.svg" },
+                { "id": "git", "label": "Git", "icon": "mods/git-graph/icons/branch.svg" },
                 { "id": "gitlab", "label": "GitLab", "icon": "mods/gitlab/icons/gitlab.svg" },
-                { "id": "github", "label": "GitHub", "icon": "mods/github/icons/github.svg" },
-                { "id": "graph", "label": "Graph", "icon": "mods/git-graph/icons/graph.svg" }
-              ]
+                { "id": "github", "label": "GitHub", "icon": "mods/github/icons/github.svg" }
+              ],
+              "aliases": {
+                "changes": { "panel": "git", "stack": "git", "view": "review", "scope": "work" },
+                "review": { "panel": "git", "stack": "git", "view": "review", "scope": "branch" },
+                "graph": { "panel": "git", "stack": "git", "view": "graph" }
+              },
+              "views": { "stack": "git", "default": "review" }
             }
           }
         },
@@ -144,7 +148,7 @@
                 {
                   "id": "panel-body",
                   "type": "stack",
-                  "active": "files",
+                  "active": "git",
                   "children": [
                     {
                       "id": "files",
@@ -154,21 +158,31 @@
                       }
                     },
                     {
-                      "id": "changes",
-                      "type": "block",
-                      "content": {
-                        "mod": "better-changes"
-                      }
-                    },
-                    {
-                      "id": "review",
-                      "type": "block",
-                      "content": {
-                        "mod": "reviewer",
-                        "props": {
-                          "base": "dev"
+                      "id": "git",
+                      "type": "stack",
+                      "active": "review",
+                      "children": [
+                        {
+                          "id": "review",
+                          "type": "block",
+                          "content": {
+                            "mod": "reviewer",
+                            "props": {
+                              "base": "dev"
+                            }
+                          }
+                        },
+                        {
+                          "id": "graph",
+                          "type": "block",
+                          "content": {
+                            "mod": "git-graph",
+                            "props": {
+                              "base": "dev"
+                            }
+                          }
                         }
-                      }
+                      ]
                     },
                     {
                       "id": "gitlab",
@@ -182,16 +196,6 @@
                       "type": "block",
                       "content": {
                         "mod": "github"
-                      }
-                    },
-                    {
-                      "id": "graph",
-                      "type": "block",
-                      "content": {
-                        "mod": "git-graph",
-                        "props": {
-                          "base": "dev"
-                        }
                       }
                     }
                   ]

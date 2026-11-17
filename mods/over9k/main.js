@@ -2237,12 +2237,20 @@ export default class Spaces extends View {
     });
   }
 
-  // The project's space in front (made if it isn't open), with the Changes panel showing.
+  // The project's space in front (made if it isn't open), with its uncommitted changes
+  // showing: the Git tab's Review on them (workbench layout), else the Changes panel.
   // The panel waits until the space is in front: the tab bar restores each space's
   // own panel when it switches, which would hide one shown before.
   showChanges(target, cx) {
     const there = () => spaces().find((s) => s.active && (target.id ? s.id === target.id : !s.machine && s.folder.replace(/\/+$/, "") === target.folder));
-    const show = () => { run("layout.select", { stack: "panel-body", child: "changes" }); run("layout.show", { id: "panel" }); };
+    const show = () => {
+      if (find(layout(), "git")?.type === "stack") {
+        setShared("git.want", { scope: "work", at: Date.now() });
+        run("layout.select", { stack: "git", child: "review" });
+        run("layout.select", { stack: "panel-body", child: "git" });
+      } else run("layout.select", { stack: "panel-body", child: "changes" });
+      run("layout.show", { id: "panel" });
+    };
     if (there()) return show();
     if (target.id) run("space.select", { id: target.id });
     else run("space.new", { machine: "", ...target });

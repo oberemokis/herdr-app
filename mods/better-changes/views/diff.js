@@ -8,6 +8,10 @@ import { fileIcon, isLight } from "../file-icons.js";
 
 const TAB_OPEN_TIMEOUT_MS = 1500;
 const NO_PATCH = "No text diff: GitHub leaves out binary and very large files.";
+// The "ref" scope (Review in the Git tab hands it): the working tree against one
+// ref, `git diff <ref> -- <file>`, read again as the file changes. HEAD, a
+// commit id, or either one's parent; anything else is refused.
+const LIVE_REF = /^(HEAD|[0-9a-f]{7,64})(~\d+)?$/;
 // In widths of the code font's size, so a diff looks the same at any terminal size.
 const CHAR_WIDTH = 0.62;
 const GUTTERS = 10;
@@ -113,6 +117,9 @@ export const diffMethods = {
     this.scope = selected.scope;
     this.commitRef = selected.commit ?? null;
     this.commitFile = selected.file ?? null;
+    this.liveRef = selected.scope === "ref" && LIVE_REF.test(selected.ref ?? "") ? selected.ref : null;
+    this.liveLabel = typeof selected.label === "string" ? selected.label : null;
+    this.liveCounts = null;
     this.splitOffset = 0;
     this.rows = [];
     this.note = null;
@@ -123,6 +130,11 @@ export const diffMethods = {
   },
 
   diffFile() {
+    if (this.scope === "ref") {
+      if (!this.liveRef || !this.commitFile) return null;
+      // Counted from the diff as it reads now: the file keeps changing under the agent.
+      return { ...this.commitFile, ...(this.liveCounts ?? {}), ...(this.commitFile.fresh && this.freshLines ? { add: this.freshLines, del: 0 } : {}) };
+    }
     if (["commit", "committed", "patch"].includes(this.scope)) return this.commitFile;
     const file = this.files.find((f) => f.path === this.path);
     if (!file) return null;
@@ -161,6 +173,7 @@ export const diffMethods = {
   },
 
   diffArgs() {
+    if (this.scope === "ref") return ["diff", this.liveRef];
     if (this.scope === "commit")
       return ["show", "--diff-merges=first-parent", "--format=", this.commitRef.hash];
     if (this.scope === "committed") return ["diff", this.commitRef.base, "HEAD"];
@@ -288,6 +301,12 @@ export const diffMethods = {
     this.rows = diffRows(visible);
     this.pairedRows = splitDiffRows(this.rows);
     this.width = scrollWidth(visible.map((line) => line.length));
+    if (this.scope === "ref") {
+      // The hunks start at the first @@, so no ---/+++ header line is counted.
+      const counts = { add: 0, del: 0 };
+      for (const line of lines) if (line[0] === "+") counts.add++; else if (line[0] === "-") counts.del++;
+      this.liveCounts = counts;
+    }
   },
 
   conflictLabel() {
@@ -306,6 +325,7 @@ export const diffMethods = {
       committed: "Committed",
       commit: this.commitRef?.short,
       patch: this.commitRef?.short,
+      ref: this.liveLabel ?? this.liveRef,
     };
     const scope = file?.conflict ? this.conflictLabel() : scopes[this.scope];
     const picture = this.path && fileIcon(this.fileIcons, `${this.root}/${this.path}`, { light: isLight(theme().background) });
@@ -359,7 +379,20 @@ export const diffMethods = {
       .child(div().flex_none().truncate().max_w(260).font_medium().child(head.title))
       .child(div().flex_1().min_w(0).truncate().text_color(t.dim).child(head.detail))
       .child(DiffStat(head))
+      .child(this.LayoutButton())
       .child(this.FullFileButton());
+  },
+
+  // Inline or side by side, here in the tab's own row: the Changes panel that
+  // switched it is not in the workbench layout.
+  LayoutButton() {
+    const split = this.diffLayout === "split";
+    return TextButton({
+      id: "diff-layout",
+      label: "Side by side",
+      active: split,
+      onClick: (cx) => this.setDiffLayout(split ? "inline" : "split", cx),
+    });
   },
 
   renderColumnTitles() {

@@ -47,6 +47,9 @@ for mod in "${mods[@]}"; do
   herdr-app check "$REPO/mods/$mod" || failed=1
 done
 [ "$failed" = 0 ] || { echo "Часть модов не прошла herdr-app check, ничего не установлено" >&2; exit 1; }
+for layout in "$REPO"/layouts/*.json; do
+  jq empty "$layout" || { echo "Раскладка $(basename "$layout") не читается как JSON, ничего не установлено" >&2; exit 1; }
+done
 
 say "Резервная копия: $BACKUP"
 run mkdir -p "$BACKUP/mods" "$BACKUP/layouts" "$BACKUP/themes"
@@ -95,6 +98,18 @@ for keys in "$REPO"/keys/*.json; do
 done
 
 [ "$DRY" = 1 ] && exit 0
+
+# Herdr подхватывает моды и раскладку на лету, а о том, что не встало, пишет в status.
+# Окно закрыто: status ничего не скажет, проверка пропускается.
+sleep 2
+errors=$(herdr-app status 2>/dev/null | jq -r '.errors[]? | tostring' 2>/dev/null || true)
+if [ -n "$errors" ]; then
+  echo "" >&2
+  echo "Herdr сообщает об ошибках после установки:" >&2
+  printf '%s\n' "$errors" | sed 's/^/  /' >&2
+  echo "Откат: скопировать файлы из $BACKUP обратно в $HOME_DIR (или git checkout на прошлый коммит и снова scripts/install.sh)" >&2
+  exit 1
+fi
 
 say ""
 say "Готово. Включить раскладку: herdr-app do layout.switch --name workbench"
