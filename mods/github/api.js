@@ -27,20 +27,38 @@ const PR = `fragment pr on PullRequest {
   rollup: commits(last: 1) { nodes { commit { statusCheckRollup { state } } } }
 }`;
 
-const LIST_QUERY = `query($owner: String!, $name: String!, $branch: String!, $ref: String!) {
+// The panel's top: this branch, the counts; the recent runs come over REST beside it.
+const SUMMARY_QUERY = `query($owner: String!, $name: String!, $branch: String!, $ref: String!) {
   viewer { login }
   repository(owner: $owner, name: $name) {
     url viewerPermission defaultBranchRef { name }
-    pullRequests(states: OPEN, first: 20, orderBy: { field: UPDATED_AT, direction: DESC }) { totalCount nodes { ...pr } }
+    openPrs: pullRequests(states: OPEN) { totalCount }
+    openIssues: issues(states: OPEN) { totalCount }
     branchPr: pullRequests(headRefName: $branch, first: 10, orderBy: { field: CREATED_AT, direction: DESC }) {
       nodes { ...pr head: commits(last: 1) { nodes { commit { ...checks } } } } }
     ref(qualifiedName: $ref) { target { ... on Commit { ...checks } } }
-    issues(states: OPEN, first: 15, orderBy: { field: UPDATED_AT, direction: DESC }) { totalCount nodes {
-      number title body url updatedAt author { login } assignees(first: 3) { nodes { login } } labels(first: 5) { nodes { name color } } } }
   }
 }
 ${PR}
 ${CHECKS}`;
+
+// One page of a sub-tab's list; `states` goes in as enum literals from a fixed set.
+const PR_STATES = { open: "OPEN", merged: "MERGED", closed: "CLOSED", all: null };
+const ISSUE_STATES = { open: "OPEN", closed: "CLOSED", all: null };
+const statesArg = (s) => (s ? `states: [${s}], ` : "");
+const prPage = (states) => `query($owner: String!, $name: String!, $first: Int!, $after: String) {
+  viewer { login }
+  repository(owner: $owner, name: $name) { viewerPermission
+    list: pullRequests(${statesArg(states)}first: $first, after: $after, orderBy: { field: UPDATED_AT, direction: DESC }) {
+      totalCount pageInfo { endCursor hasNextPage } nodes { ...pr } } }
+}
+${PR}`;
+const issuePage = (states) => `query($owner: String!, $name: String!, $first: Int!, $after: String) {
+  repository(owner: $owner, name: $name) {
+    list: issues(${statesArg(states)}first: $first, after: $after, orderBy: { field: UPDATED_AT, direction: DESC }) {
+      totalCount pageInfo { endCursor hasNextPage } nodes {
+        id number state title body url updatedAt author { login } assignees(first: 3) { nodes { login } } labels(first: 5) { nodes { name color } } } } }
+}`;
 
 const PR_QUERY = `query($owner: String!, $name: String!, $number: Int!) {
   viewer { login }
@@ -129,7 +147,7 @@ export async function locate({ cwd, on }) {
   // github.com, a GitHub Enterprise host gh is signed in to, or an ssh alias such as
   // github-work (Host in ~/.ssh/config), which is github.com under another name.
   if (host !== "github.com" && !(await ghKnows(host, root, on))) {
-    if (!/github/i.test(host)) return { root, error: "Not a GitHub remote: this panel shows GitHub repositories" };
+    if (!/github/i.test(host)) return { root, error: "Not a GitHub remote: this panel shows GitHub repositories", other: "gitlab" };
     host = "github.com";
   }
   if (parsed.path.split("/").length !== 2) return { root, error: `Not a GitHub repository path: ${parsed.path}` };
@@ -233,7 +251,7 @@ function rollupOnly(pr) {
 }
 
 const toIssue = (i) => ({
-  iid: String(i.number), title: i.title, description: i.body ?? "", webUrl: i.url, updatedAt: i.updatedAt,
+  id: i.id, iid: String(i.number), state: i.state, title: i.title, description: i.body ?? "", webUrl: i.url, updatedAt: i.updatedAt,
   author: { username: i.author?.login ?? null }, assignees: { nodes: nodes(i.assignees).map((a) => ({ username: a.login })) },
   labels: { nodes: nodes(i.labels).map((l) => ({ title: l.name, color: l.color ? `#${l.color}` : null })) },
 });
@@ -259,17 +277,23 @@ const toDiff = (f) => ({
 
 // ── reading ──────────────────────────────────────────────────────────────────
 
-export async function loadList(ctx, branch) {
+// Of a branch's pull requests (newest first), the one to show: not a fork's (headRefName
+// matches forks' branches too, a fork's "main" is not this branch), open first.
+export function pickBranchPr(list) {
+  const own = list.filter((pr) => !pr.isCrossRepository);
+  return own.find((pr) => pr.state === "OPEN") ?? own[0] ?? null;
+}
+
+export async function loadSummary(ctx, branch) {
   const { owner, name } = ownerName(ctx);
   const [data, runs] = await Promise.all([
-    graphql(ctx, LIST_QUERY, { owner, name, branch: branch ?? "", ref: `refs/heads/${branch ?? ""}` }),
+    graphql(ctx, SUMMARY_QUERY, { owner, name, branch: branch ?? "", ref: `refs/heads/${branch ?? ""}` }),
     rest(ctx, "GET", `${repo(ctx)}/actions/runs?per_page=12`).catch(() => null),
   ]);
   const r = data.repository;
   if (!r) return null;
   const me = data.viewer?.login ?? null, perm = r.viewerPermission;
-  // headRefName matches forks' branches too: a fork's "main" is not this branch.
-  const bp = nodes(r.branchPr).find((pr) => !pr.isCrossRepository);
+  const bp = pickBranchPr(nodes(r.branchPr));
   const branchMr = bp ? toMr(bp, me, perm, fromCommit(nodes(bp.head)[0]?.commit, `${bp.url}/checks`, bp.headRefName)) : null;
   const tip = r.ref?.target;
   return {
@@ -279,10 +303,36 @@ export async function loadList(ctx, branch) {
     me,
     branchMr,
     branchPipeline: branchMr ? branchMr.headPipeline : tip?.oid ? fromCommit(tip, `${r.url}/commit/${tip.oid}`, branch) : null,
-    mrs: nodes(r.pullRequests).map((pr) => toMr(pr, me, perm)), mrCount: r.pullRequests?.totalCount ?? 0,
-    // A skipped run is all noise.
+    mrCount: r.openPrs?.totalCount ?? 0, issueCount: r.openIssues?.totalCount ?? 0,
+    // Not the Runs tab: what notifications and the polling pace look at. A skipped run is all noise.
     pipelines: (runs?.workflow_runs ?? []).map(fromRun).filter((p) => p.status !== "SKIPPED"),
-    issues: nodes(r.issues).map(toIssue), issueCount: r.issues?.totalCount ?? 0,
+  };
+}
+
+// One page of a sub-tab: { items, next, count }. `filter`: open, merged, closed or all.
+// Runs page by number over REST, so their cursor is the next page's number.
+export async function loadPage(ctx, kind, { filter = "open", after = null, first = 20 } = {}) {
+  if (kind === "pipelines") {
+    const page = Number(after ?? 1);
+    const body = await rest(ctx, "GET", `${repo(ctx)}/actions/runs?per_page=${first}&page=${page}`);
+    const runs = body?.workflow_runs ?? [], total = body?.total_count ?? 0;
+    return {
+      items: runs.map(fromRun).filter((p) => p.status !== "SKIPPED"),
+      next: runs.length === first && page * first < total ? String(page + 1) : null,
+      count: body?.total_count ?? null,
+    };
+  }
+  const { owner, name } = ownerName(ctx);
+  const states = kind === "mrs" ? PR_STATES : ISSUE_STATES;
+  const query = (kind === "mrs" ? prPage : issuePage)(states[filter] === undefined ? states.open : states[filter]);
+  const data = await graphql(ctx, query, { owner, name, first, after });
+  const list = data.repository?.list;
+  if (!list) throw new Error(`No repository ${ctx.path} on ${ctx.host} (or no access)`);
+  const me = data.viewer?.login ?? null, perm = data.repository.viewerPermission;
+  return {
+    items: kind === "mrs" ? nodes(list).map((pr) => toMr(pr, me, perm)) : nodes(list).map(toIssue),
+    next: list.pageInfo?.hasNextPage ? list.pageInfo.endCursor : null,
+    count: list.totalCount ?? null,
   };
 }
 

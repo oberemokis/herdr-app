@@ -1,31 +1,25 @@
-// GitHub for the focused repo, through gh: this branch's pull request and its checks, open
-// pull requests, recent workflow runs and issues; a pull request opens in the panel itself with
-// approve, merge, threads, comments and its file diffs. Right-click anything for
-// more, including the browser (which nothing else opens).
+// GitHub for the focused repo, through gh, in sub-tabs: this branch's pull request and its
+// checks; pull requests, issues and workflow runs, each a list that loads page by page
+// (list.js); a pull request opens in the panel itself with approve, merge, threads,
+// comments and its file diffs. Right-click anything for more, including the browser.
 // Copies of this mod: the panel; a right-click menu (props.menu, menu.js); a dialog
-// (props.dialog, dialogs.js). Lists come from one GraphQL query and one REST call, polled faster
-// while something runs and slower while the panel is hidden; a run you started that finishes
-// notifies. Порт мода gitlab: та же отрисовка, данные GitHub приведены к его форме в api.js.
+// (props.dialog, dialogs.js). The top (branch, counts, recent runs) is polled faster while
+// something runs and slower while the panel is hidden, and the open list is read again with it;
+// a run you started that finishes notifies. In the Remote stack beside the GitLab panel, a
+// repo GitHub doesn't know hands the stack over to it.
+// Порт мода gitlab: та же отрисовка, данные GitHub приведены к его форме в api.js.
 
 import { View, div, svg } from "gpui-kit";
 import { v_flex, h_flex, InputState, Input, Scrollbar, v_virtual_list, TextView } from "gpui-base";
-import { spaces, panes, focused, theme, notify, layout, props, shared, closeOverlay, settings } from "herdr";
+import { spaces, panes, focused, theme, notify, props, shared, closeOverlay, settings } from "herdr";
 import { squareCorners } from "./square.js";
+import { Pager, PAGE, shown, showSibling, tabStrip, filterRow, moreRow, labelPill } from "./list.js";
 import * as api from "./api.js";
 import { ACTIVE, ENDED, nodes, slug, ago, took, diffRows, diffCounts } from "./util.js";
 import { icon, look, statusIcon, mergeStatus, mrColor, iconButton, pill } from "./ui.js";
 import * as menu from "./menu.js";
 import { Dialog } from "./dialogs.js";
 import { demoState } from "./demo.js";
-
-function find(node, id) {
-  if (node?.id === id) return node;
-  for (const child of node?.children ?? []) {
-    const found = find(child, id);
-    if (found) return found;
-  }
-  return null;
-}
 
 // The focused pane's folder and branch, as the Files and Changes panels pick it.
 function location() {
@@ -40,6 +34,16 @@ const AUTH = /401|unauth|bad credentials|not logged|auth login|gh auth/i;
 const FILE = { A: "ansi2", D: "ansi1", R: "ansi4", M: "blocked" };
 const fileStatus = (f) => (f.new_file ? "A" : f.deleted_file ? "D" : f.renamed_file ? "R" : "M");
 
+// The sub-tabs, and the state filters of their lists.
+const TABS = [["branch", "Branch"], ["mrs", "PRs"], ["issues", "Issues"], ["pipelines", "Runs"]];
+const FILTERS = {
+  mrs: [["open", "Open"], ["merged", "Merged"], ["closed", "Closed"], ["all", "All"]],
+  issues: [["open", "Open"], ["closed", "Closed"], ["all", "All"]],
+};
+const NOUN = { mrs: "pull requests", issues: "issues", pipelines: "workflow runs" };
+// A list opened again after this long reads its pages again.
+const STALE = 30000;
+
 export default class GitHub extends View {
   init(_props, cx) {
     squareCorners();
@@ -52,7 +56,9 @@ export default class GitHub extends View {
     this.details = new Map(); // "<repo>#<number>" → { mr, diffs, diffError, error, loading }
     this.runJobs = new Map(); // workflow run id → { stages, error, loading }, loaded when its row opens
     this.expanded = new Set(); this.openThreads = new Set(); this.openIssues = new Set(); this.busy = new Set();
-    this.more = new Set(); // sections showing all their rows, not the first five
+    this.pagers = new Map(); // "<repo>|<tab>|<filter>" → Pager
+    this.tabs = this.stored("tabs", {}); // space id → sub-tab
+    this.filters = this.stored("filters", {}); // sub-tab → state filter
     this.folded = new Set(this.stored("folded", []));
     this.view = null; // the lists; or { kind: "mr" | "diff", repo, iid, file }
     this.hovered = null; this.at = 0; this.bumped = shared("github.bump");
@@ -76,11 +82,51 @@ export default class GitHub extends View {
     try { return JSON.parse(localStorage.getItem(name) ?? "null") ?? fallback; } catch { return fallback; }
   }
 
-  // Shown unless it's the side panel's block and the panel is hidden or on another child.
-  visible() {
-    const root = layout(), panel = find(root, "panel"), body = find(root, "panel-body");
-    if (!panel || !body || !find(body, "github")) return true;
-    return !panel.hidden && body.active === "github";
+  // Shown unless the panel is hidden or a stack on the way (the panel's, Remote) shows another child.
+  visible() { return shown("github"); }
+
+  save(name, value) {
+    try { localStorage.setItem(name, JSON.stringify(value)); } catch {}
+  }
+
+  // ── sub-tabs ───────────────────────────────────────────────────────────────
+
+  tab() {
+    const id = spaces().find((s) => s.active)?.id, tab = this.tabs[id];
+    return TABS.some(([t]) => t === tab) ? tab : "branch";
+  }
+
+  filter(tab) { return FILTERS[tab]?.some(([f]) => f === this.filters[tab]) ? this.filters[tab] : "open"; }
+
+  pickTab(tab, cx) {
+    const id = spaces().find((s) => s.active)?.id;
+    if (!id) return;
+    this.tabs = { ...this.tabs, [id]: tab };
+    this.save("tabs", this.tabs);
+    const pager = this.pager(tab);
+    if (pager?.pages && Date.now() - pager.at > STALE) pager.reload(cx);
+    cx.notify();
+  }
+
+  pickFilter(tab, filter, cx) {
+    this.filters = { ...this.filters, [tab]: filter };
+    this.save("filters", this.filters);
+    cx.notify();
+  }
+
+  // The list of a sub-tab for this repo and its filter, kept while the panel lives (the last 24).
+  pager(tab, make = true) {
+    const s = this.state;
+    if (tab === "branch" || !s?.host) return null;
+    const filter = FILTERS[tab] ? this.filter(tab) : null, key = `${repoKey(s)}|${tab}|${filter}`;
+    let pager = this.pagers.get(key);
+    if (pager || !make) return pager ?? null;
+    const ctx = this.ctx(), demo = props()?.demo;
+    pager = new Pager((after) => (demo ? Promise.resolve({ items: (s[tab] ?? []).map((x) => ({ ...x, id: x.id ?? x.iid })), next: null })
+      : api.loadPage(ctx, tab, { filter, after, first: PAGE })));
+    this.pagers.set(key, pager);
+    if (this.pagers.size > 24) this.pagers.delete(this.pagers.keys().next().value);
+    return pager;
   }
 
   interval() {
@@ -115,11 +161,13 @@ export default class GitHub extends View {
       let state;
       try {
         const where = await api.locate(loc);
-        if (where.error) state = { error: where.error };
-        else {
+        if (where.error) {
+          state = { error: where.error };
+          if (where.other && this.context === context) showSibling("github", where.other);
+        } else {
           const base = { ...where, branch: loc.branch || where.branch };
           try {
-            const list = await api.loadList(base, base.branch);
+            const list = await api.loadSummary(base, base.branch);
             state = list ? { ...base, ...list, error: null } : { ...base, error: `No repository ${where.path} on ${where.host} (or no access)` };
           } catch (e) {
             const text = e.message;
@@ -130,8 +178,11 @@ export default class GitHub extends View {
       this.cache.set(context, state);
       if (this.context === context) this.state = state;
       this.track(state);
+      // The open list comes up to date with the top; one not loaded yet starts from render.
+      const pager = this.context === context && this.visible() ? this.pager(this.tab(), false) : null;
+      if (pager?.pages) pager.reload(cx);
       // Open runs keep their jobs current while they go.
-      for (const p of state.pipelines ?? []) {
+      for (const p of [...(state.pipelines ?? []), ...(this.pager("pipelines", false)?.items ?? [])]) {
         if (this.expanded.has(p.id) && (ACTIVE.has(p.status) || this.runJobs.get(p.runId)?.status !== p.status)) this.loadJobs(cx, p);
       }
       if (this.loading === context) this.loading = null;
@@ -266,16 +317,6 @@ export default class GitHub extends View {
       .child(svg(icon(open ? "chevron-down" : "chevron-right")).size(11).flex_none());
   }
 
-  // A section's first five rows, and a row that shows the rest (or folds them again).
-  firstFive(id, list, row, t) {
-    const all = this.more.has(id), out = (all ? list : list.slice(0, 5)).flatMap(row);
-    if (list.length > 5) out.push(div().id(`more-${id}`).px(8).py(5).flex_none().text_size(11.5).text_color(t.dim).cursor_pointer()
-      .hover((st) => st.text_color(t.foreground))
-      .on_click((_e, cx) => { all ? this.more.delete(id) : this.more.add(id); cx.notify(); })
-      .child(all ? "Show less" : `Show ${list.length - 5} more`));
-    return out;
-  }
-
   line(text, t, color) {
     return div().px(8).py(6).text_size(12).text_color(color ?? t.dim).child(text);
   }
@@ -362,7 +403,9 @@ export default class GitHub extends View {
       .on_click((_e, cx) => this.showMr(mr.iid, cx))
       .on_mouse_down("right", this.rightClick((ctx) => menu.mrItems(mr, ctx), menu.mrTarget(mr)))
       .when(Boolean(pl), (el) => el.tooltip(`Checks ${pl.label}`))
-      .child(pl ? statusIcon(pl, 14).mt(1) : svg(icon("merge-request")).size(14).mt(1).flex_none().text_color(t.dim))
+      // Merged and closed ones show their state, not checks that no longer matter.
+      .child(pl && mr.state === "opened" ? statusIcon(pl, 14).mt(1)
+        : svg(icon(mr.state === "merged" ? "merged" : "merge-request")).size(14).mt(1).flex_none().text_color(mr.state === "opened" ? t.dim : mrColor(mr, t)))
       .child(v_flex().flex_1().min_w(0).gap(2)
         .child(div().truncate().text_size(12.5).text_color(mr.draft ? t.muted : t.foreground).child(mr.title))
         .child(this.mrMeta(mr, t, [`#${mr.iid}`, mr.author?.username === s.me ? "you" : mr.author?.username, ago(mr.updatedAt)].filter(Boolean))
@@ -401,12 +444,12 @@ export default class GitHub extends View {
       .when(open, (el) => el.bg(t.raised)).hover((st) => st.bg(t.hover))
       .on_click((_e, cx) => { open ? this.openIssues.delete(issue.iid) : this.openIssues.add(issue.iid); cx.notify(); })
       .on_mouse_down("right", this.rightClick(() => menu.issueItems(target), target))
-      .child(svg(icon("issue")).size(14).mt(1).flex_none().text_color(t.ansi2))
+      .child(svg(icon("issue")).size(14).mt(1).flex_none().text_color(/^closed$/i.test(issue.state ?? "") ? t.ansi5 : t.ansi2))
       .child(v_flex().flex_1().min_w(0).gap(2)
         .child(div().when(!open, (el) => el.truncate()).text_size(12.5).child(issue.title))
         .child(h_flex().gap(6).min_w(0).text_size(11).text_color(t.dim)
           .child(div().flex_none().child([`#${issue.iid}`, who, ago(issue.updatedAt)].filter(Boolean).join(" · ")))
-          .children(nodes(issue.labels).slice(0, 3).map((lb) => div().flex_none().max_w(110).truncate().text_color(lb.color || t.muted).child(lb.title)))))
+          .children(nodes(issue.labels).slice(0, 3).map((lb, i) => labelPill(t, `issue-${issue.iid}-label-${i}`, lb)))))
       .when(Boolean(target.space), (el) => el.child(svg(icon("folder")).size(12).mt(2).flex_none().text_color(t.accent)));
     if (!open) return [row];
     return [row, v_flex().ml(28).mr(6).mb(8).gap(8)
@@ -437,22 +480,57 @@ export default class GitHub extends View {
       .child(this.refreshButton(t));
   }
 
-  renderList(t) {
+  // The count on a sub-tab: its list's for the filter on show, else the summary's open count.
+  tabCount(tab) {
+    const s = this.state;
+    if (tab === "branch") return null;
+    const known = this.pager(tab, false)?.count;
+    if (known != null) return known;
+    if (FILTERS[tab] && this.filter(tab) === "open") return tab === "mrs" ? s.mrCount : s.issueCount;
+    return null;
+  }
+
+  // Pages while the list is shorter than its window, so «Load more» shows only past a screenful.
+  fill(pager, cx) {
+    if (pager?.canMore && pager.pages < 10 && this.rowsH > 0 && this.rowsH < this.viewH + 80) pager.more(cx);
+  }
+
+  renderList(t, cx) {
     const s = this.state, rows = [];
-    if (!s?.mrs) {
-      rows.push(this.line(s?.error ?? (this.loading || !s ? "Loading…" : "Nothing to show"), t, s?.error ? t.muted : t.dim));
-    } else {
-      if (s.error) rows.push(this.line(s.error, t, t.ansi1));
-      rows.push(this.section("branch", s.branch || "Detached HEAD", null, t, svg(icon("branch")).size(11).flex_none()));
-      if (!this.folded.has("branch")) rows.push(this.branchCard(s, t));
-      rows.push(this.section("mrs", "Pull requests", s.mrCount, t));
-      if (!this.folded.has("mrs")) rows.push(...(s.mrs.length ? s.mrs.map((m) => this.mrRow(m, s, t)) : [this.line("No open pull requests", t)]));
-      rows.push(this.section("issues", "Issues", s.issueCount, t));
-      if (!this.folded.has("issues")) rows.push(...(s.issues.length ? this.firstFive("issues", s.issues, (i) => this.issueRow(i, s, t), t) : [this.line("No open issues", t)]));
-      rows.push(this.section("pipelines", "Workflow runs", null, t));
-      if (!this.folded.has("pipelines")) rows.push(...(s.pipelines.length ? this.firstFive("pipelines", s.pipelines, (p) => this.pipelineRow(p, t), t) : [this.line("No workflow runs", t)]));
+    if (!s?.web) {
+      // Как пустые состояния других панелей: 14 от края карточки, серым; красным только сбой
+      // запроса к GitHub, а не «не тот репозиторий» (у такого нет хоста).
+      rows.push(this.line(s?.error ?? (this.loading || !s ? "Loading…" : "Nothing to show"), t, s?.error && s.host ? t.ansi1 : t.dim).pt(14));
+      return [this.listHeader(s, t), v_flex().id("gh-list").flex_1().min_h(0).px(6).pb(10).children(rows)];
     }
-    return [this.listHeader(s, t), v_flex().id("gh-list").flex_1().min_h(0).px(6).pb(10).overflow_y_scrollbar().children(rows)];
+    const tab = this.tab(), pager = this.pager(tab), filters = FILTERS[tab];
+    if (pager && !pager.started) pager.more(cx);
+    if (s.error) rows.push(this.line(s.error, t, t.ansi1));
+    if (!pager) {
+      rows.push(h_flex().h(26).px(6).gap(6).flex_none().items_center().text_size(11).font_medium().text_color(t.dim)
+        .child(svg(icon("branch")).size(11).flex_none()).child(div().min_w(0).truncate().child(s.branch || "Detached HEAD")));
+      rows.push(this.branchCard(s, t));
+    } else {
+      const row = { mrs: (m) => this.mrRow(m, s, t), issues: (i) => this.issueRow(i, s, t), pipelines: (p) => this.pipelineRow(p, t) }[tab];
+      rows.push(...pager.items.flatMap(row));
+      if (pager.done && !pager.items.length) {
+        const f = filters ? this.filter(tab) : "all";
+        rows.push(this.line(`No ${f === "all" ? "" : `${f} `}${NOUN[tab]}`, t));
+      }
+      const more = moreRow(t, `gh-${tab}`, pager);
+      if (more) rows.push(more);
+    }
+    const body = v_flex().id(`gh-list-${tab}`).flex_1().min_h(0).overflow_y_scrollbar()
+      .on_size_change((size, cx) => { this.viewH = size.height; this.fill(pager, cx); })
+      .child(v_flex().id(`gh-rows-${tab}`).flex_none().w_full().px(6).pb(10)
+        .on_size_change((size, cx) => { this.rowsH = size.height; this.fill(pager, cx); })
+        .children(rows));
+    return [
+      this.listHeader(s, t),
+      tabStrip(t, "gh", TABS.map(([id, label]) => ({ id, label, count: this.tabCount(id) })), tab, (id, cx) => this.pickTab(id, cx)),
+      ...(filters ? [filterRow(t, `gh-${tab}`, filters, this.filter(tab), (f, cx) => this.pickFilter(tab, f, cx))] : []),
+      body,
+    ];
   }
 
   detailHeader(t, title, extra) {
@@ -682,7 +760,7 @@ export default class GitHub extends View {
     if (this.view && this.state?.host && this.view.repo !== repoKey(this.state)) this.view = null;
 
     const t = theme();
-    const parts = !this.view ? this.renderList(t) : this.view.kind === "diff" ? this.renderDiff(t) : this.renderMr(t);
+    const parts = !this.view ? this.renderList(t, cx) : this.view.kind === "diff" ? this.renderDiff(t) : this.renderMr(t);
     return v_flex().id("github").track_focus(this.handle).size_full().min_h(0).rounded(10).overflow_hidden()
       .bg(t.background).border_1().border_color(t.border).text_color(t.foreground).text_size(13)
       .on_key_down((e, cx) => {

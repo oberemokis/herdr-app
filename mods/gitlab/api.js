@@ -21,28 +21,50 @@ const MR = `fragment mr on MergeRequest {
   diffStatsSummary { additions deletions fileCount }
 }`;
 
-// Список читается двумя запросами: self-hosted GitLab ограничивает сложность одного запроса
-// (250 по умолчанию), а вместе MR, пайплайны со стадиями и задачи дают около 290.
-const LIST_MRS_QUERY = `query($path: ID!, $branch: String!) {
+// The panel's top: this branch, the counts and the recent pipelines (for notifications and
+// for how often to poll), in two queries: self-hosted GitLab caps one query's complexity
+// (250 by default). The branch's merge request is the open one from this project, not a
+// fork's branch of the same name; failing that, the latest.
+const SUMMARY_QUERY = `query($path: ID!, $branch: String!) {
   currentUser { username todos(state: pending) { count } }
   project(fullPath: $path) {
-    webUrl
+    id webUrl
     repository { rootRef }
-    mergeRequests(state: opened, first: 20, sort: UPDATED_DESC) { count nodes { ...mr headPipeline { iid status detailedStatus { group } } } }
-    branchMr: mergeRequests(sourceBranches: [$branch], first: 1, sort: CREATED_DESC) { nodes { ...mr headPipeline { ...pipeline } } }
+    openMrs: mergeRequests(state: opened) { count }
+    openIssues: issues(state: opened) { count }
+    branchMrs: mergeRequests(sourceBranches: [$branch], first: 5, sort: CREATED_DESC) { nodes { iid state sourceProjectId } }
+  }
+}`;
+
+const BRANCH_QUERY = `query($path: ID!, $branch: String!, $iid: String!, $withMr: Boolean!) {
+  project(fullPath: $path) {
+    mergeRequest(iid: $iid) @include(if: $withMr) { ...mr headPipeline { ...pipeline } }
+    branchPipelines: pipelines(ref: $branch, first: 1) { nodes { ...pipeline } }
+    recent: pipelines(first: 12) { nodes { id iid status ref path createdAt startedAt duration detailedStatus { group } user { username } commit { shortId title } } }
   }
 }
 ${MR}
 ${PIPELINE}`;
 
-const LIST_PIPELINES_QUERY = `query($path: ID!, $branch: String!) {
-  project(fullPath: $path) {
-    branchPipelines: pipelines(ref: $branch, first: 1) { nodes { ...pipeline } }
-    pipelines(first: 12) { nodes { ...pipeline } }
-    issues(state: opened, first: 15, sort: UPDATED_DESC) { count nodes { iid title description webUrl updatedAt author { username } assignees { nodes { username } } labels { nodes { title color } } } }
+// One page of a sub-tab's list.
+const PAGES = {
+  mrs: `query($path: ID!, $state: MergeRequestState!, $first: Int!, $after: String) {
+    project(fullPath: $path) { list: mergeRequests(state: $state, first: $first, after: $after, sort: UPDATED_DESC) {
+      count pageInfo { endCursor hasNextPage } nodes { ...mr headPipeline { iid status detailedStatus { group } } } } }
   }
-}
-${PIPELINE}`;
+  ${MR}`,
+  issues: `query($path: ID!, $state: IssuableState!, $first: Int!, $after: String) {
+    project(fullPath: $path) { list: issues(state: $state, first: $first, after: $after, sort: UPDATED_DESC) {
+      count pageInfo { endCursor hasNextPage } nodes { id iid state title description webUrl updatedAt
+        author { username } assignees { nodes { username } } labels { nodes { title color } } } } }
+  }`,
+  pipelines: `query($path: ID!, $first: Int!, $after: String) {
+    project(fullPath: $path) { list: pipelines(first: $first, after: $after) {
+      count pageInfo { endCursor hasNextPage } nodes { ...pipeline } } }
+  }
+  ${PIPELINE}`,
+};
+const STATES = { open: "opened", merged: "merged", closed: "closed", all: "all" };
 
 const MR_QUERY = `query($path: ID!, $iid: String!) {
   project(fullPath: $path) {
@@ -113,17 +135,26 @@ export async function locate({ cwd, on }) {
   }
   const repo = parseRemote(url.out);
   if (!repo) return { root, error: `Unrecognized remote: ${url.out}` };
-  if (/(^|\.)github\.com$/.test(repo.host)) return { root, error: "A GitHub remote: this panel shows GitLab projects" };
+  // github.com, or an ssh alias such as github-work: the GitHub panel's, as it reads them.
+  if (/github/i.test(repo.host)) return { root, error: "A GitHub remote: this panel shows GitLab projects", other: "github" };
   const branch = (await git(["branch", "--show-current"], root)).out;
   return { root, on, remote, host: repo.host, path: repo.path, branch };
 }
 
-export async function loadList(ctx, branch) {
+// Of a branch's merge requests (newest first), the one to show: from this project, open first.
+export function pickBranchMr(list, projectId) {
+  const own = list.filter((m) => String(m.sourceProjectId) === restId(projectId));
+  return own.find((m) => m.state === "opened") ?? own[0] ?? null;
+}
+
+export async function loadSummary(ctx, branch) {
   const vars = { path: ctx.path, branch: branch ?? "" };
-  const [data, more] = await Promise.all([graphql(ctx, LIST_MRS_QUERY, vars), graphql(ctx, LIST_PIPELINES_QUERY, vars)]);
-  if (!data.project || !more.project) return null;
-  const p = { ...data.project, ...more.project };
-  const branchMr = nodes(p.branchMr)[0] ?? null;
+  const data = await graphql(ctx, SUMMARY_QUERY, vars);
+  const p = data.project;
+  if (!p) return null;
+  const pick = pickBranchMr(nodes(p.branchMrs), p.id);
+  const more = (await graphql(ctx, BRANCH_QUERY, { ...vars, iid: pick?.iid ?? "", withMr: Boolean(pick) })).project ?? {};
+  const branchMr = more.mergeRequest ?? null;
   return {
     web: p.webUrl,
     origin: /^(https?:\/\/[^/]+)/.exec(p.webUrl)?.[1] ?? `https://${ctx.host}`,
@@ -131,12 +162,24 @@ export async function loadList(ctx, branch) {
     me: data.currentUser?.username ?? null,
     todos: data.currentUser?.todos?.count ?? 0,
     branchMr,
-    branchPipeline: branchMr?.headPipeline ?? nodes(p.branchPipelines)[0] ?? null,
-    mrs: nodes(p.mergeRequests), mrCount: p.mergeRequests?.count ?? 0,
-    // A [skip ci] commit's pipeline is all noise.
-    pipelines: nodes(p.pipelines).filter((x) => x.status !== "SKIPPED"),
-    issues: nodes(p.issues), issueCount: p.issues?.count ?? 0,
+    branchPipeline: branchMr?.headPipeline ?? nodes(more.branchPipelines)[0] ?? null,
+    mrCount: p.openMrs?.count ?? 0, issueCount: p.openIssues?.count ?? 0,
+    // Not the Pipelines tab: what notifications and the polling pace look at.
+    pipelines: nodes(more.recent).filter((x) => x.status !== "SKIPPED"),
   };
+}
+
+// One page of a sub-tab: { items, next, count }. `filter`: open, merged, closed or all.
+export async function loadPage(ctx, kind, { filter = "open", after = null, first = 20 } = {}) {
+  const vars = { path: ctx.path, first, after };
+  if (kind !== "pipelines") vars.state = STATES[filter] ?? "opened";
+  const data = await graphql(ctx, PAGES[kind], vars);
+  const list = data.project?.list;
+  if (!list) throw new Error(`No project ${ctx.path} on ${ctx.host} (or no access)`);
+  let items = nodes(list);
+  // A [skip ci] commit's pipeline is all noise.
+  if (kind === "pipelines") items = items.filter((x) => x.status !== "SKIPPED");
+  return { items, next: list.pageInfo?.hasNextPage ? list.pageInfo.endCursor : null, count: list.count ?? null };
 }
 
 // One merge request with its threads, plus its diffs (REST: the first 100 files).

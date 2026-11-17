@@ -88,10 +88,11 @@
               "panels": [
                 { "id": "files", "label": "Files", "icon": "mods/better-files/icons/file.svg" },
                 { "id": "git", "label": "Git", "icon": "mods/git-graph/icons/branch.svg" },
-                { "id": "gitlab", "label": "GitLab", "icon": "mods/gitlab/icons/gitlab.svg" },
-                { "id": "github", "label": "GitHub", "icon": "mods/github/icons/github.svg" }
+                { "id": "remote", "label": "Remote", "icon": "mods/gitlab/icons/merge-request.svg" }
               ],
               "aliases": {
+                "gitlab": { "panel": "remote" },
+                "github": { "panel": "remote" },
                 "changes": { "panel": "git", "stack": "git", "view": "review", "scope": "work" },
                 "review": { "panel": "git", "stack": "git", "view": "review", "scope": "branch" },
                 "graph": { "panel": "git", "stack": "git", "view": "graph" }
@@ -185,18 +186,25 @@
                       ]
                     },
                     {
-                      "id": "gitlab",
-                      "type": "block",
-                      "content": {
-                        "mod": "gitlab"
-                      }
-                    },
-                    {
-                      "id": "github",
-                      "type": "block",
-                      "content": {
-                        "mod": "github"
-                      }
+                      "id": "remote",
+                      "type": "stack",
+                      "active": "gitlab",
+                      "children": [
+                        {
+                          "id": "gitlab",
+                          "type": "block",
+                          "content": {
+                            "mod": "gitlab"
+                          }
+                        },
+                        {
+                          "id": "github",
+                          "type": "block",
+                          "content": {
+                            "mod": "github"
+                          }
+                        }
+                      ]
                     }
                   ]
                 }
