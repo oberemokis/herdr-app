@@ -222,7 +222,7 @@ const CLOCK = "mods/over9k/clock.svg";
 // (view.hoverLink, set by the row: lit). `to` (an ssh's computer): the server
 // icon its heading has after the arrow; hovering lights its row under there.
 function linkChip(t, id, { dir, icon, color, to = null }) {
-  return h_flex().id(id).flex_none().h(16).px(4).gap(3).items_center().rounded(4).bg(color + "26").text_size(10.5).text_color(color)
+  return h_flex().id(id).flex_none().h(16).px(5).gap(3).items_center().rounded_full().bg(color + "26").text_size(10.5).line_height("16px").text_color(color)
     .when(dir === "in", (el) => el.child(div().flex_none().child("\u2192")))
     .child(svg(icon).size(icon === SUB ? 13 : 10).flex_none()) // the round subagent robot is drawn smaller
     .when(dir === "out", (el) => el.child(div().flex_none().child("\u2192")))
@@ -263,7 +263,7 @@ const FAMILY = [{ match: /qwen/i, icon: "mods/over9k/qwen.svg", color: "#6f69f7"
 function badge(el, fam, bg) {
   if (!fam) return el;
   return div().relative().flex_none().child(el)
-    .child(div().absolute().right(-4).bottom(-4).size(10).rounded(5).bg(bg).flex().items_center().justify_center()
+    .child(div().absolute().right(-4).bottom(-4).size(10).rounded_full().bg(bg).flex().items_center().justify_center()
       .child(svg(fam.icon).size(8).text_color(fam.color)));
 }
 // An agent's name: its tab's name when someone named it, else its session's
@@ -772,8 +772,8 @@ export default class Spaces extends View {
       const m = Object.values(this.models).find((x) => x.port === port);
       const fam = FAMILY.find((f) => f.match.test(m?.name ?? ""));
       const armed = this.hoverServer === port;
-      return h_flex().id(`server-${port}`).h(18).px(5).gap(4).flex_none().rounded(5).items_center().cursor_pointer()
-        .border(1).border_color(armed ? t.ansi1 : t.border).text_size(10.5).text_color(armed ? t.ansi1 : t.dim)
+      return h_flex().id(`server-${port}`).h(18).px(7).gap(4).flex_none().rounded_full().items_center().cursor_pointer()
+        .border(1).border_color(armed ? t.ansi1 : t.border).text_size(10.5).line_height("16px").text_color(armed ? t.ansi1 : t.dim)
         .hover((s) => s.bg(t.hover))
         .on_hover((on, cx) => { if (on) this.hoverServer = port; else if (this.hoverServer === port) this.hoverServer = null; cx.notify(); })
         .on_mouse_down("left", (_e, cx) => cx.stop_propagation())
@@ -829,7 +829,8 @@ export default class Spaces extends View {
     const chevron = () => svg(`mods/workspace-chrome/chevron-${this.subsOpen.has(a?.address) ? "down" : "right"}.svg`).size(8);
     // White (the theme's text colour) on a faint wash of it.
     const fg = t.foreground, wash = (a) => (/^#[0-9a-f]{6}$/i.test(fg) ? fg + a : t.raised);
-    const chip = () => h_flex().h(16).px(4).gap(3).items_center().rounded(4).text_size(10.5).text_color(fg);
+    // Round, its line as tall as itself so icons and figures centre on one line, the same 5 at both ends.
+    const chip = () => h_flex().h(16).px(5).gap(3).items_center().rounded_full().text_size(10.5).line_height("16px").text_color(fg);
     const n = this.subCounts(a);
     // An icon and count for each kind it has (compact: just how many in all); a
     // click shows or hides them (subRows).
@@ -852,7 +853,7 @@ export default class Spaces extends View {
         .when(!compact && n.inner > 0, (el) => el.child(svg(SUB).size(13).flex_none().ml(n.agents > 0 ? 3 : 0)).child(String(n.inner)))
         .when(!compact && n.processes > 0, (el) => el.child(svg(CPU).size(10).flex_none().ml(n.agents + n.inner > 0 ? 3 : 0)).child(String(n.processes)))
         .when(!compact && n.crons > 0, (el) => el.child(svg(CLOCK).size(10).flex_none().ml(n.agents + n.inner + n.processes > 0 ? 3 : 0)).child(String(n.crons)))
-        .children(away.map((c, i) => div().size(5).rounded(3).flex_none().bg(c).when(i === 0, (el) => el.ml(1))))
+        .children(away.map((c, i) => div().size(5).rounded_full().flex_none().bg(c).when(i === 0, (el) => el.ml(1))))
         .child(chevron()));
   }
 
@@ -1617,8 +1618,8 @@ export default class Spaces extends View {
   // `size`: the spinner's (a sub-row's is smaller).
   mark(a, t, size = 12) {
     if (a.status === "working") return svg("mods/workspace-chrome/spinner.svg").size(size).text_color(t.working).spin(900);
-    if (a.status === "blocked") return div().size(7).rounded(4).bg(t.blocked);
-    if (a.status === "done") return div().size(7).rounded(4).bg(t.done ?? t.accent);
+    if (a.status === "blocked") return div().size(7).rounded_full().bg(t.blocked);
+    if (a.status === "done") return div().size(7).rounded_full().bg(t.done ?? t.accent);
     return div();
   }
 
@@ -2019,7 +2020,7 @@ export default class Spaces extends View {
         .text_color(on ? t.foreground : n === 0 ? t.dim : t.muted).when(on, (el) => el.bg(t.raised))
         .hover((s) => s.bg(t.hover).text_color(t.foreground))
         .on_click(pick(id))
-        .when(Boolean(color) && n > 0, (el) => el.child(div().size(6).rounded(3).flex_none().bg(color)))
+        .when(Boolean(color) && n > 0, (el) => el.child(div().size(6).rounded_full().flex_none().bg(color)))
         .child(label)
         .when(n > 0, (el) => el.child(div().text_color(t.dim).child(String(n))));
     };
@@ -2064,7 +2065,7 @@ export default class Spaces extends View {
       const list = this.frame.ag.filter((a) => a.status === sec.status && at.has(a.pane)).sort((x, y) => (y.seq ?? 0) - (x.seq ?? 0));
       if (!list.length) continue;
       out.push(h_flex().id(`section-${sec.status}`).h(26).mt(out.length ? 8 : 2).px(8).gap(6).flex_none().items_center().text_size(11.5).text_color(t.muted)
-        .child(div().size(6).rounded(3).flex_none().bg(t[sec.status] ?? t.dim))
+        .child(div().size(6).rounded_full().flex_none().bg(t[sec.status] ?? t.dim))
         .child(sec.label).child(div().text_color(t.dim).child(String(list.length))));
       for (const a of list) {
         const g = at.get(a.pane);
@@ -2135,7 +2136,7 @@ export default class Spaces extends View {
         .child(svg(`mods/workspace-chrome/${m ? "server" : "monitor"}.svg`).size(14).flex_none())
         // Name, then whether it's reachable and the fold chevron right after it; the + at the far end.
         .when(!collapsed, el => el.child(div().min_w(0).truncate().child(m ?? "This computer"))
-          .child(div().size(6).rounded(3).flex_none().bg(connected ? t.ansi2 : t.dim))
+          .child(div().size(6).rounded_full().flex_none().bg(connected ? t.ansi2 : t.dim))
           .child(svg(`mods/workspace-chrome/chevron-${folded ? "right" : "down"}.svg`).size(11).flex_none())
           .when(!m, el => el.children(this.serverChips(t)))
           .child(div().flex_1())

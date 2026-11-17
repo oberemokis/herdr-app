@@ -111,7 +111,7 @@ export const paneHeaderMethods = {
             .child("Needs you"),
         ),
       )
-      .when(p.status === "done", (el) => el.child(div().size(7).flex_none().rounded(4).bg(t.done)))
+      .when(p.status === "done", (el) => el.child(div().size(7).flex_none().rounded_full().bg(t.done)))
       .when(Boolean(this.hovered), (el) =>
         el
           .when(p.mod === "better-changes", (el) => el.child(this.FullFileButton()))

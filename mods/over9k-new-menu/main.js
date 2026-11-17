@@ -111,7 +111,7 @@ function badged(el, model, bg) {
   const fam = model && FAMILY.find(f => f.match.test(model));
   if (!fam) return el;
   return div().relative().flex_none().child(el)
-    .child(div().absolute().right(-4).bottom(-4).size(10).rounded(5).bg(bg).flex().items_center().justify_center()
+    .child(div().absolute().right(-4).bottom(-4).size(10).rounded_full().bg(bg).flex().items_center().justify_center()
       .child(svg(fam.icon).size(8).text_color(fam.color)));
 }
 

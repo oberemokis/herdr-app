@@ -109,7 +109,7 @@ export default class Switcher extends View {
           // Working: the sidebar's spinner (over9k's mark); else its status dot.
           .child(a.status === "working"
             ? svg("mods/workspace-chrome/spinner.svg").size(12).flex_none().text_color(t.working).spin(900)
-            : div().size(7).flex_none().rounded(4).bg(color[a.status] ?? t.unknown));
+            : div().size(7).flex_none().rounded_full().bg(color[a.status] ?? t.unknown));
       }));
   }
 }

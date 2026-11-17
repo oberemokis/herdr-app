@@ -95,7 +95,7 @@ export class Dialog {
     const contextWidth = Math.max(...shown.map((l) => l.length)) * 6.7 + 24;
     const link = (id, text, action, icon) => h_flex().id(id).h(20).px(5).gap(4).items_center().rounded(4).text_size(11).text_color(t.dim).cursor_pointer().hover((s) => s.text_color(t.foreground).bg(t.hover)).on_click(action)
       .when(Boolean(icon), (e) => e.child(svg(`mods/reviewer/${icon}.svg`).size(12))).child(text);
-    const dot = (a) => div().size(7).rounded(4).bg(t[DOT[a.status]] ?? t.unknown);
+    const dot = (a) => div().size(7).rounded_full().bg(t[DOT[a.status]] ?? t.unknown);
     // The target as a select-looking box; with a chevron when there is a list to open.
     const agentBox = (a, opens) => h_flex().id("to-box").h(28).px(9).gap(7).items_center().rounded(7).border_1().border_color(this.choosing ? t.accent : t.input).bg(t.raised)
       .when(opens, (e) => e.cursor_pointer().hover((s) => s.bg(t.hover)))

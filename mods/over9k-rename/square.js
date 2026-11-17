@@ -7,6 +7,7 @@ const NAMES = ["rounded", "rounded_t", "rounded_b", "rounded_l", "rounded_r", "r
 
 function patch(proto) {
   if (!proto || proto.__square) return;
+  // rounded_full не трогаем: им рисуются круглые статусы и метки (новое имя метода Herdr не пропустит).
   for (const name of NAMES) {
     const original = proto[name];
     if (typeof original === "function") proto[name] = function () { return original.call(this, 0); };

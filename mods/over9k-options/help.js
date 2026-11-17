@@ -21,7 +21,7 @@ export function helpTopics(view, t) {
     : image(`icons/${name}.svg`).w(size).h(size).flex_none());
   const icon = (path, size = 12, color = t.dim) => svg(path).size(size).flex_none().text_color(color);
   const spinner = (size = 12) => svg(`${CHROME}/spinner.svg`).size(size).flex_none().text_color(t.working).spin(900);
-  const dot = (color) => div().size(7).rounded(4).flex_none().bg(color);
+  const dot = (color) => div().size(7).rounded_full().flex_none().bg(color);
   const wash = (c, a) => (/^#[0-9a-f]{6}$/i.test(c) ? c + a : t.raised);
 
   // A picture: a piece of the sidebar on its background.
@@ -41,7 +41,7 @@ export function helpTopics(view, t) {
   const computer = (name, { on = true, chips = [], bot = false } = {}) => h_flex().h(31).px(8).gap(7).items_center().text_size(11.5).text_color(t.dim)
     .child(icon(`${CHROME}/${name ? "server" : "monitor"}.svg`, 14, t.dim))
     .child(div().min_w(0).truncate().child(name ?? "This computer"))
-    .child(div().size(6).rounded(3).flex_none().bg(on ? t.ansi2 : t.dim))
+    .child(div().size(6).rounded_full().flex_none().bg(on ? t.ansi2 : t.dim))
     .child(chev("down")).children(chips).child(div().flex_1())
     .when(bot, (el) => el.child(icon("mods/over9k/bot.svg", 13, t.dim)))
     .child(icon(`${CHROME}/plus.svg`, 12));
@@ -91,7 +91,7 @@ export function helpTopics(view, t) {
     .children(parts.flatMap(([k, n], i) => (k ? [svg(k).size(k === SUB ? 13 : 10).flex_none().when(i > 0, (el) => el.ml(3)), div().child(String(n))] : [div().child(String(n))])))
     .child(svg(`${CHROME}/chevron-${open ? "down" : "right"}.svg`).size(8));
   const section = (label, color, n) => h_flex().h(26).mt(2).px(8).gap(6).items_center().text_size(11.5).text_color(t.muted)
-    .child(div().size(6).rounded(3).flex_none().bg(color)).child(label).child(div().text_color(t.dim).child(String(n)));
+    .child(div().size(6).rounded_full().flex_none().bg(color)).child(label).child(div().text_color(t.dim).child(String(n)));
   const filter = (agentsOn) => h_flex().h(30).px(8).gap(2).items_center().text_size(11.5)
     .child(h_flex().h(20).px(7).items_center().rounded(5).text_color(agentsOn ? t.muted : t.foreground).when(!agentsOn, (el) => el.bg(t.raised)).child("All"))
     .child(h_flex().h(20).px(7).gap(4).items_center().rounded(5).text_color(agentsOn ? t.foreground : t.muted).when(agentsOn, (el) => el.bg(t.raised))
@@ -122,7 +122,7 @@ export function helpTopics(view, t) {
     .child(div().flex_1().min_w(0).truncate().text_color(ticked ? t.dim : t.foreground).when(ticked, (el) => el.line_through()).child(text))
     .when(Boolean(when), (el) => el.child(small(when)));
   const tlCard = (n, at, text, info, live) => h_flex().gap(8).px(6).py(4).items_start()
-    .child(div().mt(4).size(9).flex_none().rounded(5).border_2().border_color(live ? t.working : t.border).when(live, (el) => el.bg(t.working)))
+    .child(div().mt(4).size(9).flex_none().rounded_full().border_2().border_color(live ? t.working : t.border).when(live, (el) => el.bg(t.working)))
     .child(v_flex().flex_1().min_w(0).gap(2).px(9).py(6).rounded(8).bg(live ? t.raised : t.chrome)
       .child(h_flex().gap(6).text_size(10.5).text_color(t.dim).child(n).child(at))
       .child(div().text_size(12.5).text_color(t.foreground).truncate().child(text))

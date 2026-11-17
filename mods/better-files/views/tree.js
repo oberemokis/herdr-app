@@ -96,7 +96,7 @@ export const treeMethods = {
       )
       .when(Boolean(change), (el) => el.child(StatusLetter(change.mark)))
       .when(dir && holdsChange(this.marks, path), (el) =>
-        el.child(div().size(6).flex_none().rounded(3).bg(t.ansi3)),
+        el.child(div().size(6).flex_none().rounded_full().bg(t.ansi3)),
       );
   },
 

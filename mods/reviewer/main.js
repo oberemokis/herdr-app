@@ -870,7 +870,7 @@ export default class Changes extends View {
           .child(div().w(14).text_size(11).text_color(f.status === "A" ? t.ansi2 : f.status === "D" ? t.ansi1 : f.status === "U" ? t.ansi1 : t.blocked).child(f.status))
           .child(h_flex().flex_1().min_w(0).child(div().text_color(t.dim).truncate().child(parts.length ? parts.join("/") + "/" : "")).child(div().max_w(260).min_w(0).truncate().child(name)))
           // One speech bubble: the draft count when there are drafts, and a click comments on the whole file.
-          .child(h_flex().id(`comment-file-${f.path}`).h(18).min_w(18).px(k ? 5 : 0).gap(3).items_center().justify_center().rounded(4).cursor_pointer()
+          .child(h_flex().id(`comment-file-${f.path}`).h(18).min_w(18).px(k ? 6 : 0).gap(3).items_center().justify_center().rounded_full().line_height("18px").cursor_pointer()
             .when(Boolean(k), (e) => e.bg(t.accent + "33").text_size(10).text_color(t.foreground))
             .when(!k, (e) => e.text_color(t.muted))
             .hover((s) => s.bg(k ? t.accent + "55" : t.hover).text_color(t.foreground))

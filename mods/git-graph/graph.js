@@ -541,7 +541,7 @@ export class Graph {
     const base = Boolean(wanted) && (label.kind === "branch" ? first === wanted
       : label.kind === "remote" && first.slice(first.indexOf("/") + 1) === wanted);
     const edge = base ? t.accent : label.kind === "tag" ? t.ansi3 : label.kind === "head" ? t.accent : color;
-    return h_flex().flex_none().w(label.width).h(18).rounded(5).border_1().border_color(edge).overflow_hidden()
+    return h_flex().flex_none().w(label.width).h(18).rounded_full().border_1().border_color(edge).overflow_hidden()
       .when(current, (e) => e.bg(color)).when(base && !current, (e) => e.bg(t.accent + "26")).when(label.kind === "head", (e) => e.bg(t.accent))
       .children(label.parts.map((part, i) => {
         const fg = current || part.kind === "head" ? t.background : base && i === 0 ? t.accent : part.kind === "tag" ? t.ansi3 : i > 0 ? t.muted : t.foreground;
@@ -597,7 +597,7 @@ export class Graph {
         .child(h_flex().id("graph-repository").h(22).px(7).gap(5).min_w(0).items_center().rounded(6).cursor_pointer()
           .bg(this.picking ? t.selected : t.raised).text_color(t.foreground).hover((s) => s.bg(t.hover)).on_click((_e, cx) => this.togglePicker(cx))
           .child(svg(icon("folder")).size(12).flex_none()).child(div().min_w(0).truncate().text_size(11.5).font_semibold().child(repo.name))))
-      .when(ready && Boolean(where), (e) => e.child(h_flex().h(22).px(7).gap(5).min_w(0).items_center().rounded(6).bg(t.accent + "26").text_color(t.accent)
+      .when(ready && Boolean(where), (e) => e.child(h_flex().h(22).px(9).gap(5).min_w(0).items_center().rounded_full().line_height("22px").bg(t.accent + "26").text_color(t.accent)
         .child(svg(icon(this.current ? "branch" : "commit")).size(12).flex_none()).child(div().min_w(0).truncate().text_size(11.5).font_semibold().child(where))))
       .when(this.state === "workspace", (e) => e.child(div().flex_none().text_size(11.5).text_color(t.dim).child(count(ws.repos.length, "repo"))))
       .child(div().flex_1())
@@ -666,7 +666,7 @@ export class Graph {
       .child(div().min_w(0).truncate().text_size(11.5).text_color(here ? t.accent : t.foreground).child(r.name))
       .child(h_flex().flex_none().gap(5).items_center().text_size(11.5)
         .when(st?.dirty > 0, (e) => e.child(h_flex().mr(2).gap(4).items_center().text_color(t.blocked)
-          .child(div().size(6).rounded(3).bg(t.blocked)).child(String(st.dirty))))
+          .child(div().size(6).rounded_full().bg(t.blocked)).child(String(st.dirty))))
         .when(counts && st.ahead > 0, (e) => e.child(div().text_color(t.ansi2).child(`\u2191${st.ahead}`)))
         .when(counts && st.behind > 0, (e) => e.child(div().text_color(t.ansi1).child(`\u2193${st.behind}`)))
         .when(Boolean(label), (e) => e.child(div().text_color(color).child(label))))

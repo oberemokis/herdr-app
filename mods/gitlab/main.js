@@ -452,7 +452,7 @@ export default class GitLab extends View {
         .when(Boolean(s?.host), (el) => el.cursor_pointer().hover((st) => st.text_color(t.accent)).tooltip("Project links")
           .on_click(projectMenu).on_mouse_down("right", projectMenu))
         .child(s?.path ?? (this.loading ? "Loading…" : "GitLab")))
-      .when(ready && s.todos > 0, (el) => el.child(h_flex().id("gl-todos").h(22).px(6).gap(4).items_center().rounded(6).text_size(11)
+      .when(ready && s.todos > 0, (el) => el.child(h_flex().id("gl-todos").h(22).px(8).gap(4).items_center().rounded_full().text_size(11).line_height("22px")
         .text_color(t.accent).cursor_pointer().hover((st) => st.bg(t.hover)).tooltip("Your GitLab to-do list")
         .on_click(projectMenu)
         .child(svg(icon("todo")).size(12)).child(String(s.todos))))
