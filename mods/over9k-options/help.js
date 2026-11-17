@@ -165,7 +165,7 @@ export function helpTopics(view, t) {
         ]),
       topic("Git",
         view.sample(t, view.spaceSample(t, view.opts())), [
-          line(icon("mods/over9k/github.svg", 13), "Opens GitHub"),
+          line(icon("mods/over9k/github.svg", 13), "Opens the repo on GitHub or GitLab"),
           line(div().text_color(t.ansi3).child("4"), "Uncommitted files. Opens Changes"),
           line(h_flex().gap(4).child(div().text_color(t.ansi2).child("↑2")).child(div().text_color(t.ansi1).child("↓1")), "Push or pull (click twice)"),
         ])),

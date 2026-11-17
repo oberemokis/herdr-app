@@ -1932,12 +1932,18 @@ export default class Spaces extends View {
           info.behind = Math.abs(parseInt(b, 10)) || 0;
         }
       }
-      // A GitHub remote (origin first) becomes a link to the repo's page.
+      // A remote (origin first) becomes a link to the repo's page: GitHub when the host says
+      // so (github.com, an ssh alias like github-work), GitLab for any other host (self-hosted
+      // ones go by their own names, git.<company>…). Bitbucket and local paths get none.
       const urls = (await exec("git", ["remote", "-v"], { cwd, on })).stdout.split("\n")
         .map((l) => l.split(/\s+/)).filter(([n, , kind]) => kind === "(fetch)").sort(([a], [b]) => (b === "origin") - (a === "origin"));
       for (const [, url] of urls) {
-        const m = /github\.com[:/]+([^/]+\/[^/]+?)(?:\.git)?\/?$/.exec(url ?? "");
-        if (m) { info.web = `https://github.com/${m[1]}`; break; }
+        const m = /^(?:[a-z+]+:\/\/)?(?:[^@/]+@)?([^/:]+)(?::\d+)?[:/]+(.+?)(?:\.git)?\/?$/i.exec(url ?? "");
+        if (!m || /^(file:|\/|\.)/.test(url) || /bitbucket/i.test(m[1])) continue;
+        const [, host, path] = m;
+        if (/github/i.test(host)) { info.web = `https://github.com/${path}`; info.webKind = "github"; }
+        else { info.web = `https://${host}/${path}`; info.webKind = "gitlab"; }
+        break;
       }
       this.git[key] = info;
       if (!on) this.watch(repo, cx);
@@ -2351,15 +2357,16 @@ export default class Spaces extends View {
       );
   }
 
-  // Right after the name, when the repo is on GitHub: its icon, which opens the repo.
+  // Right after the name, when the repo is on GitHub or GitLab: its icon, which opens the repo.
   ghLink(g, t) {
     if (!g?.web) return null;
+    const lab = g.webKind === "gitlab";
     return this.explained(div().id(`web-${g.web}`).flex_none().ml(-5).p(2).rounded(4).cursor_pointer().text_color(t.dim), g,
-      "Open in GitHub")
+      lab ? "Open in GitLab" : "Open in GitHub")
       .hover((s) => s.bg(t.hover).text_color(t.foreground))
       .on_mouse_down("left", (_e, cx) => cx.stop_propagation())
       .on_click((_e, cx) => { cx.stop_propagation(); cx.open_url(g.web); })
-      .child(svg("mods/over9k/github.svg").size(13));
+      .child(svg(lab ? "mods/over9k/gitlab.svg" : "mods/over9k/github.svg").size(13));
   }
 
   // A device's pinned default (the Pin in over9k-new-menu, shared "over9k.startPin"): a

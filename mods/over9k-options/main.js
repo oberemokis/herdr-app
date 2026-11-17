@@ -62,7 +62,7 @@ const SPACE_ITEMS = [
   ["sync", "Commits to push or pull", "Click twice to push or pull"],
 ];
 const GITHUB_ITEMS = [
-  ["github", "GitHub link", "Opens the repo"],
+  ["github", "Repo link", "Opens the repo on GitHub or GitLab"],
 ];
 
 export default class SidebarOptions extends View {
