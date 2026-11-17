@@ -527,7 +527,7 @@ export class Graph {
       paths.set(key, { p, color });
     }
     const color = commit.uncommitted ? t.dim : colors[row.lane % colors.length];
-    const dot = div().absolute().left(x(row.lane) - 4).top(this.rowH() / 2 - 4).size(8).rounded(4);
+    const dot = div().absolute().left(x(row.lane) - 4).top(this.rowH() / 2 - 4).size(8).rounded_full();
     return div().relative().flex_none().w(width).h(this.rowH()).overflow_hidden()
       .children([...paths.values()].map(({ p, color }) => window.paint_path(p.build(), color).absolute().top(0).left(0).size_full()))
       // HEAD is a ring, as in Git Graph; uncommitted changes a gray one.
