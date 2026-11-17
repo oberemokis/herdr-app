@@ -69,6 +69,8 @@ function place(s, _ps) {
 // (Herdr would call it after wherever its first terminal went).
 const title = (s) => (s.named || s.machine ? s.name : !s.folder || s.folder.replace(/\/+$/, "") === homeDir() ? "~" : base(s.folder));
 const rowHeight = ({ tree }) => (tree ? 28 : 30);
+// Над каждым пространством, кроме первого под заголовком компьютера: пространства явно отделены друг от друга.
+const SPACE_GAP = 16;
 const where = (s, ps) => JSON.stringify([s.machine ?? null, place(s, ps)]);
 const base = (path) => path.replace(/\/+$/, "").split("/").pop();
 // Пространство задачи fleet -> пространство её оркестратора, по метке task-fleet.space у терминала
@@ -1765,6 +1767,8 @@ export default class Spaces extends View {
       this.vis.push(key);
       const folded = this.agentsFolded.has(key);
       const row = h_flex().id(`loose-${name}`).h(collapsed ? 26 : 30).flex_none().px(collapsed ? 0 : 8).gap(9).items_center().rounded(8)
+        // Папка в списке стоит наравне с пространствами: тот же отступ сверху (SPACE_GAP).
+        .when(!collapsed && this.spaceCount++ > 0, (el) => el.mt(SPACE_GAP))
         .when(collapsed, (el) => el.justify_center())
         .hover((s) => s.bg(t.hover))
         .when(this.sel.has(key), (el) => el.bg(t.accent + "38"))
@@ -2106,7 +2110,7 @@ export default class Spaces extends View {
     // Built top to bottom (functions, called in order) so this.vis, which Shift+click
     // ranges follow, is in the order shown.
     // Not open projects something works in now, lifted into the list (lifted).
-    const busy = (m) => on || collapsed ? [] : this.lifted(m).flatMap((d) => [this.closedRow(d, t, collapsed, m),
+    const busy = (m) => on || collapsed ? [] : this.lifted(m).flatMap((d) => [this.closedRow(d, t, collapsed, m).when(this.spaceCount++ > 0, (el) => el.mt(SPACE_GAP)),
       ...this.visitorRows({ id: m ? `r:${m}:${d}` : `c:${d}`, machine: m, folder: d }, t), ...(m ? this.sshRows(m, t, d) : [])]);
     const closed = () => on ? [] : [...busy(null), ...this.looseRows(t, collapsed, true), ...this.closedSection(t, collapsed)];
     // Other folders' rows go right after ~ (first, when there's no ~ space).
@@ -2146,6 +2150,7 @@ export default class Spaces extends View {
             .on_mouse_down("left", (_e, cx) => cx.stop_propagation())
             .on_click((_e, cx) => { cx.stop_propagation(); this.addHome(m); })
             .child(svg("mods/workspace-chrome/plus.svg").size(12)))));
+      this.spaceCount = 0; // первое пространство под заголовком компьютера идёт без отступа (row)
       const drawn = m ? [...(on ? [] : this.sshRows(m, t)), ...mine.flatMap(draw), ...busy(m)]
         : [...drawAll(mine.slice(0, trees)), ...(homeAt < 0 ? others() : []), ...drawAll(mine.slice(trees))];
       const extra = on ? [] : m ? this.closedSection(t, collapsed, m) : closed();
@@ -2288,6 +2293,8 @@ export default class Spaces extends View {
       .id(`space-${w.id}`)
       .px(8)
       .h(rowHeight({ tree }))
+      // Отступ между пространствами (SPACE_GAP); задачи внутри дерева идут плотно.
+      .when(!tree && this.spaceCount++ > 0, (el) => el.mt(SPACE_GAP))
       .flex_none()
       .justify_center()
       .rounded(8)
