@@ -445,17 +445,13 @@ export default class GitLab extends View {
   }
 
   listHeader(s, t) {
-    const ready = Boolean(s?.web), projectMenu = this.rightClick((ctx) => menu.projectItems(ctx), {});
+    const projectMenu = this.rightClick((ctx) => menu.projectItems(ctx), {});
     return h_flex().h(32).flex_none().px(14).gap(8).items_center().border_b(1).border_color(t.border)
       .child(svg(icon("gitlab")).size(15).flex_none().text_color(BRAND))
       .child(div().id("gl-project").flex_1().min_w(0).truncate().font_semibold()
         .when(Boolean(s?.host), (el) => el.cursor_pointer().hover((st) => st.text_color(t.accent)).tooltip("Project links")
           .on_click(projectMenu).on_mouse_down("right", projectMenu))
         .child(s?.path ?? (this.loading ? "Loading…" : "GitLab")))
-      .when(ready && s.todos > 0, (el) => el.child(h_flex().id("gl-todos").h(22).px(8).gap(4).items_center().rounded_full().text_size(11).line_height("22px")
-        .text_color(t.accent).cursor_pointer().hover((st) => st.bg(t.hover)).tooltip("Your GitLab to-do list")
-        .on_click(projectMenu)
-        .child(svg(icon("todo")).size(12)).child(String(s.todos))))
       .child(this.refreshButton(t));
   }
 

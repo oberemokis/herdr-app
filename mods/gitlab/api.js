@@ -26,7 +26,7 @@ const MR = `fragment mr on MergeRequest {
 // (250 by default). The branch's merge request is the open one from this project, not a
 // fork's branch of the same name; failing that, the latest.
 const SUMMARY_QUERY = `query($path: ID!, $branch: String!) {
-  currentUser { username todos(state: pending) { count } }
+  currentUser { username }
   project(fullPath: $path) {
     id webUrl
     repository { rootRef }
@@ -160,7 +160,6 @@ export async function loadSummary(ctx, branch) {
     origin: /^(https?:\/\/[^/]+)/.exec(p.webUrl)?.[1] ?? `https://${ctx.host}`,
     main: p.repository?.rootRef ?? null,
     me: data.currentUser?.username ?? null,
-    todos: data.currentUser?.todos?.count ?? 0,
     branchMr,
     branchPipeline: branchMr?.headPipeline ?? nodes(more.branchPipelines)[0] ?? null,
     mrCount: p.openMrs?.count ?? 0, issueCount: p.openIssues?.count ?? 0,

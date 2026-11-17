@@ -73,7 +73,7 @@ export function demoState() {
   ];
   return {
     host: "gitlab.example.com", path: "acme/storefront", root: "/tmp", on: null, remote: "origin", web, origin: "https://gitlab.example.com",
-    main: "main", me: "dana", todos: 3, branch: "feat/checkout-retry", branchMr: mine, branchPipeline: running,
+    main: "main", me: "dana", branch: "feat/checkout-retry", branchMr: mine, branchPipeline: running,
     mrs, mrCount: mrs.length, pipelines, issues, issueCount: issues.length, error: null,
   };
 }
