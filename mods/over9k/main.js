@@ -845,7 +845,7 @@ export default class Spaces extends View {
         localStorage.setItem("agents.subsOpen", JSON.stringify([...this.subsOpen]));
         cx.notify();
       })
-      // Brighter while its row is hovered (a click anywhere on the row folds it too).
+      // Brighter while its row is hovered.
       .child(chip().bg(wash(this.hoverTerm === p.pane ? "29" : "1a"))
         .when(compact, (el) => el.child(String(n.agents + n.inner + n.processes + n.crons)))
         .when(!compact && n.agents > 0, (el) => el.child(svg(BOT).size(10).flex_none()).child(String(n.agents)))
@@ -995,12 +995,8 @@ export default class Spaces extends View {
           if (e.click_count === 2) return this.renamePane(p, a, tab);
           this.sel.clear();
           this.anchor = `p:${p.pane}`;
-          // An agent with things under it: a click shows or hides them too (as its chip does).
-          if (a && this.subCount(a) > 0) {
-            this.subsOpen.has(a.address) ? this.subsOpen.delete(a.address) : this.subsOpen.add(a.address);
-            localStorage.setItem("agents.subsOpen", JSON.stringify([...this.subsOpen]));
-            cx.notify();
-          }
+          // Только переход к агенту: то, что под ним, сворачивает и разворачивает его чип (subsChip),
+          // иначе каждый переход заодно складывал список shell-команд.
           if (!space.active) run("space.select", { id: space.id });
           run("pane.focus", { pane: p.pane });
         })
