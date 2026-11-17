@@ -90,6 +90,7 @@
                 { "id": "changes", "label": "Changes", "icon": "mods/changes/changes.svg" },
                 { "id": "review", "label": "Review", "icon": "mods/reviewer/comment.svg" },
                 { "id": "gitlab", "label": "GitLab", "icon": "mods/gitlab/icons/gitlab.svg" },
+                { "id": "github", "label": "GitHub", "icon": "mods/github/icons/github.svg" },
                 { "id": "graph", "label": "Graph", "icon": "mods/git-graph/icons/graph.svg" }
               ]
             }
@@ -174,6 +175,13 @@
                       "type": "block",
                       "content": {
                         "mod": "gitlab"
+                      }
+                    },
+                    {
+                      "id": "github",
+                      "type": "block",
+                      "content": {
+                        "mod": "github"
                       }
                     },
                     {

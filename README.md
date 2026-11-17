@@ -14,6 +14,7 @@
 | панель Changes | `better-changes` | изменения, stage и unstage, история |
 | панель Review | `reviewer` | дифф ветки от базы с комментариями по строкам, которые уходят агенту этого worktree |
 | панель GitLab | `gitlab` | MR ветки, пайплайн по стадиям и джобам, логи джоб, задачи |
+| панель GitHub | `github` | PR ветки, проверки по workflow и джобам, логи Actions, workflow runs, issues |
 | панель Graph | `git-graph` | граф веток, база выделена |
 
 Подвала с Settings и Add machine в сайдбаре нет: настройки Herdr открывает `cmd-,`, настройки over9k `cmd-alt-,`, машины добавляются в Settings → Machines.
@@ -33,14 +34,15 @@
 Подробно в `UPSTREAM.md` рядом с каждым модом: откуда взят, на каком коммите, под какой лицензией и что поменяно. Коротко:
 
 - Ни одна панель не коммитит: поле коммита убрано из `better-changes` и `reviewer`, `git-graph` разрешает только Fetch.
-- Панели не создают worktree и не запускают агентов: это убрано из `gitlab`, `reviewer` и `over9k`.
+- Панели не создают worktree и не запускают агентов: это убрано из `gitlab`, `reviewer` и `over9k`, и в `github` этого нет.
+- `github` своего автора не имеет: это порт `gitlab` на `gh`, чем он отличается, записано в его `UPSTREAM.md`.
 - `reviewer` пишет только агенту Claude Code из того же worktree и не печатает заблокированному агенту.
 - Из `over9k` вырезаны handoff, «clear + recap», запись в настройки Claude Code, самообновление, чтение экранов терминалов и запросы к GitHub.
 - Проверка обновлений `git-graph` выключена.
 
 ## Установка
 
-Нужны Herdr.app 0.1.15 или новее, `jq`, `node`, `rsync`. Для панели GitLab нужен [glab](https://gitlab.com/gitlab-org/cli) с выполненным `glab auth login` на свой хост.
+Нужны Herdr.app 0.1.15 или новее, `jq`, `node`, `rsync`. Для панели GitLab нужен [glab](https://gitlab.com/gitlab-org/cli) с выполненным `glab auth login` на свой хост, для панели GitHub нужен [gh](https://cli.github.com) с выполненным `gh auth login`.
 
 ```sh
 scripts/install.sh --dry-run   # что изменится
@@ -59,6 +61,7 @@ herdr-app do layout.switch --name workbench
 | Клавиша | Что делает |
 | --- | --- |
 | `cmd-alt-1` … `cmd-alt-5` | открыть или закрыть Files, Changes, Review, GitLab, Graph |
+| `cmd-alt-6` | открыть или закрыть GitHub (кнопка стоит рядом с GitLab, а клавиша последняя: `install.sh` не переназначает занятые) |
 | `ctrl-tab` | переключатель агентов over9k |
 | `cmd-shift-x` | закрыть терминал в табе, с подтверждением over9k для работающего агента |
 | `cmd-alt-,` | настройки over9k |
@@ -73,4 +76,4 @@ herdr-app do layout.switch --name workbench
 
 ## Лицензии
 
-Каждый мод несёт лицензию автора в своей папке: MIT у `git-graph`, `gitlab`, `reviewer` и `over9k*`, Apache-2.0 у `better-files`, `better-changes`, `machine-vitals`, `workbench-tabs` и `workbench-pane` (клоны модов Herdr). Скрипты, раскладка и клавиши этого репозитория под MIT, текст в `LICENSE`.
+Каждый мод несёт лицензию автора в своей папке: MIT у `git-graph`, `gitlab`, `github` (лицензия `gitlab`, от которого он портирован), `reviewer` и `over9k*`, Apache-2.0 у `better-files`, `better-changes`, `machine-vitals`, `workbench-tabs` и `workbench-pane` (клоны модов Herdr). Скрипты, раскладка и клавиши этого репозитория под MIT, текст в `LICENSE`.
