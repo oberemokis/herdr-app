@@ -5,12 +5,15 @@ import { exec } from "herdr";
 import { SCRIPT, parse } from "./stats.js";
 
 export const HOUR = 3_600_000;
+// A sample takes about a second (iostat waits one). One running longer is lost: the copy
+// that started it closed while it ran (the monitor window), and its finally never came.
+const STUCK = 10_000;
 
 export const store = {
   samples: [], // { t, cpu, mem, rx, tx }, oldest first, the last hour
   now: null, // the last parse() result, with rx/tx rates added
   error: null,
-  busy: false,
+  busy: 0, // when the running sample started, 0 when none runs
   last: 0,
   net: null, // the previous byte counters, for rates
 };
@@ -18,11 +21,12 @@ export const store = {
 // Samples unless one is running or the last is younger than `every` ms.
 // Resolves true when a new sample landed.
 export async function sample(every) {
-  if (store.busy || Date.now() - store.last < every - 100) return false;
-  store.busy = true;
-  store.last = Date.now();
+  const started = Date.now();
+  if ((store.busy && started - store.busy < STUCK) || started - store.last < every - 100) return false;
+  store.busy = started;
+  store.last = started;
   try {
-    const s = parse((await exec("sh", ["-c", SCRIPT])).stdout);
+    const s = parse((await exec("sh", ["-c", SCRIPT], { timeout: STUCK - 2000 })).stdout);
     const t = Date.now();
     const prev = store.net;
     const dt = prev ? (t - prev.t) / 1000 : 0;
@@ -39,6 +43,6 @@ export async function sample(every) {
     store.error = String(e);
     return true;
   } finally {
-    store.busy = false;
+    if (store.busy === started) store.busy = 0;
   }
 }
