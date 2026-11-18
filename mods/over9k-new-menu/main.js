@@ -345,6 +345,8 @@ export default class NewMenu extends View {
       .when(Boolean(shown), el => el.child(this.list?.kind === "models" ? this.modelList(shown, () => icon(shown)) : this.sessionList(shown, () => icon(shown), p.computer)))
       .when(!shown && !this.list, el => el.child(v_flex().flex_none()
       .when(Boolean(p.folder), el => el.child(div().px(9).pt(4).pb(2).text_size(11).text_color(t.dim).child(`Open ${p.name}`)))
+      // Без папки меню относится к показанному пространству: его имя сверху говорит, куда откроется вкладка.
+      .when(!p.folder && !p.computer && Boolean(space), el => el.child(div().px(9).pt(4).pb(2).truncate().text_size(11).text_color(t.dim).child(`In ${space.name}`)))
       .child(this.row("terminal", svg("icons/shell.svg").size(14), "CLI", () => this.start(null), p.folder ? "" : shortcut("tab.new")))
       .child(heading("Start an agent"))
       .child(v_flex().flex_none()

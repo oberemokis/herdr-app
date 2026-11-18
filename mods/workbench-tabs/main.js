@@ -173,10 +173,14 @@ export default class Tabs extends View {
     return h_flex().size_full().min_w(0).px(8).pl(lightsPadding).gap(3).items_center().bg(t.chrome).border_b(1).border_color(t.border)
       .on_mouse_up("left", () => { this.pressed = null; })
       .on_scroll_wheel(e => { if (Math.abs(e.delta.y) >= 1) run(e.delta.y > 0 ? "tab.prev" : "tab.next"); })
+      // «+» последним элементом ряда вкладок: стоит сразу за последней вкладкой.
+      // Полоса с прокруткой не сжимается до содержимого, поэтому снаружи ряда он уезжал к Files.
+      // Меню «+» относится к активному пространству: вкладка в его папке, агенты, его сессии
+      // и worktree. Новое пространство создаётся из боковой панели, здесь его нет.
       .child(h_flex().id("tab-scroll").flex_1().min_w(0).h_full().items_center().gap(3).overflow_x_scrollbar().track_scroll(this.scroll)
         .on_size_change((_size, cx) => { if (active >= 0) { this.scroll.scroll_to_item(active); cx.notify(); } })
-        .children(shown.map(item)))
-      .child(button("tab-new", "+", () => openOverlay({ mod: "new-menu", kind: "popup", width: 250, height: 512 })))
+        .children(shown.map(item))
+        .child(button("tab-new", svg("mods/workspace-chrome/plus.svg").size(12), () => openOverlay({ mod: "over9k-new-menu", kind: "popup", width: 340, height: 640 }))))
       .children(panels.map(p => panelButton(p.id, p.label, p.icon)))
       .when(w?.buttons, el => el.child(button("minimize", w.platform === "windows" ? svg("mods/workbench-tabs/win-min.svg").size(16) : "−", () => run("window.minimize")))
         .child(button("maximize", w.platform === "windows" ? svg(`mods/workbench-tabs/${w.maximized ? "win-restore" : "win-max"}.svg`).size(16) : "□", () => run("window.maximize")))
