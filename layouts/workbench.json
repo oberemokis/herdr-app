@@ -78,7 +78,8 @@
               "panels": [
                 { "id": "files", "label": "Files", "icon": "mods/better-files/icons/file.svg" },
                 { "id": "git", "label": "Git", "icon": "mods/git-graph/icons/branch.svg" },
-                { "id": "remote", "label": "Remote", "icon": "mods/gitlab/icons/merge-request.svg" }
+                { "id": "remote", "label": "Remote", "icon": "mods/gitlab/icons/merge-request.svg" },
+                { "id": "ports", "label": "Ports", "icon": "mods/ports/icons/port.svg" }
               ],
               "aliases": {
                 "gitlab": { "panel": "remote" },
@@ -195,6 +196,13 @@
                           }
                         }
                       ]
+                    },
+                    {
+                      "id": "ports",
+                      "type": "block",
+                      "content": {
+                        "mod": "ports"
+                      }
                     }
                   ]
                 }

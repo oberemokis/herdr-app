@@ -17,6 +17,7 @@
 | панель Git, вид Graph | `git-graph` | граф веток, база выделена; клик по коммиту открывает его в Review |
 | вкладка с диффом | `better-changes` | файл из Review диффом во вкладке рядом с терминалами |
 | панель Remote | `gitlab` или `github` | MR или PR ветки с пайплайном или проверками, списки MR или PR, задач и пайплайнов с подгрузкой страницами, логи джоб |
+| панель Ports | `ports` | слушающие TCP-порты, сгруппированные по worktree, compose-папке или папке процесса; текущий worktree первым, конфликты одного порта, поиск с проверкой «порт свободен» и ближайшим свободным; открыть в браузере, скопировать, остановить процесс или контейнер |
 
 Подвала с Settings и Add machine в сайдбаре нет: настройки Herdr открывает `cmd-,`, настройки over9k `cmd-alt-,`, машины добавляются в Settings → Machines.
 
@@ -69,6 +70,7 @@ herdr-app do layout.switch --name workbench
 | `cmd-alt-2`, `cmd-alt-3` | Git на виде Review: рабочие изменения или ветка от базы; повторное нажатие закрывает |
 | `cmd-alt-5` | Git на виде Graph |
 | `cmd-alt-4`, `cmd-alt-6` | открыть или закрыть Remote (прежние клавиши GitLab и GitHub) |
+| `cmd-alt-7` | открыть или закрыть Ports |
 | `ctrl-tab` | переключатель агентов over9k |
 | `cmd-shift-x` | закрыть терминал в табе, с подтверждением over9k для работающего агента |
 | `cmd-alt-,` | настройки over9k |
@@ -94,4 +96,4 @@ REMOTE_TEST_GITLAB=<хост>/<группа>/<проект> node --import ./scri
 
 ## Лицензии
 
-Каждый мод несёт лицензию автора в своей папке: MIT у `git-graph`, `gitlab`, `github` (лицензия `gitlab`, от которого он портирован), `reviewer` и `over9k*`, Apache-2.0 у `better-files`, `better-changes`, `machine-vitals`, `workbench-tabs` и `workbench-pane` (клоны модов Herdr). Скрипты, раскладка и клавиши этого репозитория под MIT, текст в `LICENSE`.
+Каждый мод несёт лицензию автора в своей папке: MIT у `git-graph`, `gitlab`, `github` (лицензия `gitlab`, от которого он портирован), `reviewer` и `over9k*`, Apache-2.0 у `better-files`, `better-changes`, `machine-vitals`, `workbench-tabs` и `workbench-pane` (клоны модов Herdr). Свой мод `ports`, скрипты, раскладка и клавиши этого репозитория под MIT (иконки Lucide в `ports` под ISC, текст в `LICENSE-lucide`), текст в `LICENSE`.
