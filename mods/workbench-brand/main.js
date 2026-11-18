@@ -1,7 +1,7 @@
-// The sidebar's top row: empty space to drag the window by, and the button that folds the sidebar to a
+// The sidebar's top row: the Herdr mark and the button that folds the sidebar to a
 // rail and back. On the macOS rail the window buttons fill the row's top, so the row
 // grows (BRAND_RAIL) and the button sits under them, in the middle of the rail.
-import { View, div, svg } from "gpui-kit";
+import { View, div, image, svg } from "gpui-kit";
 import { h_flex, v_flex } from "gpui-base";
 import { theme, run, window, shared, setShared, layout } from "herdr";
 import { squareCorners } from "./square.js";
@@ -47,7 +47,10 @@ export default class WorkbenchBrand extends View {
       .on_click(toggleSidebar)
       .child(svg("mods/workspace-chrome/sidebar.svg").size(15));
     if (rail) return v_flex().size_full().bg(t.chrome).items_center().justify_end().pb(7).child(button);
-    return h_flex().size_full().bg(t.chrome).pl(macos() ? 76 : 14).pr(10).items_center().justify_end()
+    return h_flex().size_full().bg(t.chrome).pl(macos() ? 76 : 14).pr(10).gap(8).items_center().text_size(13.5)
+      .child(h_flex().flex_1().min_w(0).gap(8).items_center()
+        .child(image("frame/welcome/herdr.png").size(20).rounded(5))
+        .child(div().font_semibold().text_color(t.foreground).child("Herdr")))
       .child(button);
   }
 }
