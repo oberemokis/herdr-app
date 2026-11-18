@@ -211,6 +211,14 @@
               ]
             }
           ]
+        },
+        {
+          "id": "limits",
+          "type": "block",
+          "size": { "px": 26 },
+          "content": {
+            "mod": "provider-limits"
+          }
         }
       ]
     }
