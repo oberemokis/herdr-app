@@ -215,7 +215,7 @@
         {
           "id": "limits",
           "type": "block",
-          "size": { "px": 26 },
+          "size": { "px": 29 },
           "content": {
             "mod": "provider-limits"
           }

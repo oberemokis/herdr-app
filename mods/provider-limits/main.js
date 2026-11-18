@@ -7,7 +7,8 @@ import { exec, theme, appHome, checking } from "herdr";
 
 const EVERY = 5 * 60_000; // the Claude usage endpoint answers 429 when polled often
 const TICK = 60_000; // redraw for the "resets in" countdowns
-const BAR = 36;
+const BAR = 40;
+const BAR_H = 6;
 const PROVIDERS = [
   ["claude", "Claude"],
   ["codex", "Codex"],
@@ -64,17 +65,19 @@ export default class ProviderLimits extends View {
     const used = Math.min(100, Math.max(0, w.used));
     const color = used >= 90 ? t.blocked : used >= 70 ? t.ansi3 : t.done;
     const hint = w.resets ? `сброс в ${clock(w.resets)}, через ${left(w.resets)}` : "время сброса неизвестно";
-    return h_flex().id(`${id}-${w.label}`).gap(5).items_center().tooltip(hint)
+    // A non-empty fill keeps at least a pixel, so 1% is still visible.
+    const fill = used > 0 ? Math.max(1, Math.round((BAR * used) / 100)) : 0;
+    return h_flex().id(`${id}-${w.label}`).flex_none().gap(6).items_center().tooltip(hint)
       .child(div().text_color(t.dim).child(w.label))
-      .child(div().w(BAR).h(4).rounded(2).bg(t.border)
-        .child(div().h_full().w((BAR * used) / 100).rounded(2).bg(color)))
-      .child(div().text_color(used >= 70 ? color : t.muted).child(`${Math.round(used)}%`))
-      .when(Boolean(w.resets), (el) => el.child(div().text_color(t.dim).child(left(w.resets))));
+      .child(div().flex_none().w(BAR).h(BAR_H).bg(t.border).overflow_hidden()
+        .child(div().h_full().w(fill).bg(color)))
+      .child(div().flex_none().text_color(used >= 70 ? color : t.muted).child(`${Math.round(used)}%`))
+      .when(Boolean(w.resets), (el) => el.child(div().flex_none().text_color(t.dim).child(left(w.resets))));
   }
 
   provider(t, id, name) {
     const d = this.data[id];
-    const row = h_flex().id(`p-${id}`).gap(10).items_center()
+    const row = h_flex().id(`p-${id}`).flex_none().gap(12).items_center()
       .child(div().text_color(t.foreground).child(name));
     if (!d) return row.child(div().text_color(t.dim).child("…"));
     const windows = d.windows ?? [];
@@ -89,11 +92,13 @@ export default class ProviderLimits extends View {
   render(_cx) {
     const t = theme();
     const status = this.busy ? "обновляю…" : this.at ? `обновлено ${clock(this.at)}` : "";
-    return h_flex().id("root").size_full().px(14).gap(22).items_center()
-      .bg(t.chrome).border_t(1).border_color(t.border).text_size(11.8).text_color(t.muted)
-      .children(PROVIDERS.map(([id, name]) => this.provider(t, id, name)))
+    const sep = () => div().flex_none().w(1).h(12).bg(t.border);
+    const providers = PROVIDERS.flatMap(([id, name], i) => (i ? [sep(), this.provider(t, id, name)] : [this.provider(t, id, name)]));
+    return h_flex().id("root").size_full().px(14).gap(16).items_center()
+      .bg(t.chrome).border_t(1).border_color(t.border).text_size(12).line_height("16px").text_color(t.muted)
+      .children(providers)
       .child(div().flex_1())
-      .child(div().id("refresh").text_color(t.dim).hover((s) => s.text_color(t.foreground))
+      .child(div().id("refresh").flex_none().text_color(t.dim).hover((s) => s.text_color(t.foreground))
         .tooltip("Обновить лимиты").on_click((_e, cx) => this.refresh(cx)).child(status));
   }
 }
