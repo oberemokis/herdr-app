@@ -47,16 +47,6 @@
           }
         },
         {
-          "id": "machine-vitals",
-          "type": "block",
-          "size": {
-            "px": 100
-          },
-          "content": {
-            "mod": "machine-vitals"
-          }
-        },
-        {
           "id": "over9k",
           "type": "block",
           "size": {
@@ -213,12 +203,28 @@
           ]
         },
         {
-          "id": "limits",
-          "type": "block",
+          "id": "footer",
+          "type": "row",
           "size": { "px": 29 },
-          "content": {
-            "mod": "provider-limits"
-          }
+          "resizable": false,
+          "children": [
+            {
+              "id": "limits",
+              "type": "block",
+              "size": { "weight": 1 },
+              "content": {
+                "mod": "provider-limits"
+              }
+            },
+            {
+              "id": "machine-vitals",
+              "type": "block",
+              "size": { "px": 300 },
+              "content": {
+                "mod": "machine-vitals"
+              }
+            }
+          ]
         }
       ]
     }

@@ -1,11 +1,14 @@
 """Print subscription limits of Claude and Codex as one JSON object.
 
+`limits.py [claude] [codex]` asks only the named providers; no names asks both.
+
 {"claude": {"windows": [{"label", "used", "resets"}]} | {"error"}, "codex": ...}
 `used` is percent, `resets` is epoch ms or null. Never refreshes tokens: an
 expired Claude token is reported, Claude Code renews it on its next start.
 """
 
 import json
+import sys
 import shutil
 import subprocess
 import threading
@@ -117,6 +120,9 @@ def codex():
         process.wait()
 
 
+PROVIDERS = {"claude": claude, "codex": codex}
+wanted = [name for name in sys.argv[1:] if name in PROVIDERS] or list(PROVIDERS)
+
 with ThreadPoolExecutor() as pool:
-    jobs = {"claude": pool.submit(claude), "codex": pool.submit(codex)}
+    jobs = {name: pool.submit(PROVIDERS[name]) for name in wanted}
     print(json.dumps({name: job.result() for name, job in jobs.items()}, ensure_ascii=False))

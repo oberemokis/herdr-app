@@ -1,6 +1,6 @@
 // Footer with subscription limits: Claude (5h and week) and Codex (its windows).
-// limits.py fetches both; this mod polls it every 5 minutes and on click.
-// A failed poll keeps the last numbers and marks the provider with a warning.
+// limits.py fetches them; this mod polls both every 5 minutes, and one provider when
+// its row is clicked. A failed poll keeps the last numbers and marks the provider.
 import { View, div } from "gpui-kit";
 import { h_flex } from "gpui-base";
 import { exec, theme, appHome, checking } from "herdr";
@@ -30,33 +30,35 @@ function clock(ms) {
 export default class ProviderLimits extends View {
   init(_props, cx) {
     this.data = {};
-    this.busy = false;
-    this.at = null;
+    this.busy = new Set();
+    this.at = {};
     if (checking()) return;
     this.refresh(cx);
     cx.timer.every(EVERY, (cx) => this.refresh(cx));
     cx.timer.every(TICK, (cx) => cx.notify());
   }
 
-  refresh(cx) {
-    if (this.busy) return;
-    this.busy = true;
+  // Polls the given providers (all by default); one already in flight is skipped.
+  refresh(cx, ids = PROVIDERS.map(([id]) => id)) {
+    const todo = ids.filter((id) => !this.busy.has(id));
+    if (!todo.length) return;
+    for (const id of todo) this.busy.add(id);
     cx.notify();
     cx.spawn(async (cx) => {
       let next = {};
       try {
-        const r = await exec("python3", ["-I", `${appHome()}/mods/provider-limits/limits.py`], { timeout: 45_000 });
+        const r = await exec("python3", ["-I", `${appHome()}/mods/provider-limits/limits.py`, ...todo], { timeout: 45_000 });
         next = JSON.parse(r.stdout);
-        this.at = Date.now();
       } catch (e) {
         const error = `limits.py: ${e?.message ?? e}`;
-        next = Object.fromEntries(PROVIDERS.map(([id]) => [id, { error }]));
+        next = Object.fromEntries(todo.map((id) => [id, { error }]));
       }
-      for (const [id] of PROVIDERS) {
+      for (const id of todo) {
         const fresh = next[id] ?? { error: "нет данных" };
         this.data[id] = fresh.windows ? fresh : { windows: this.data[id]?.windows, error: fresh.error };
+        if (fresh.windows) this.at[id] = Date.now();
+        this.busy.delete(id);
       }
-      this.busy = false;
       cx.notify();
     });
   }
@@ -75,9 +77,18 @@ export default class ProviderLimits extends View {
       .when(Boolean(w.resets), (el) => el.child(div().flex_none().text_color(t.dim).child(left(w.resets))));
   }
 
+  // The whole row is the provider's refresh button.
   provider(t, id, name) {
     const d = this.data[id];
-    const row = h_flex().id(`p-${id}`).flex_none().gap(12).items_center()
+    const busy = this.busy.has(id);
+    const tip = [
+      busy ? "обновляю…" : this.at[id] ? `обновлено в ${clock(this.at[id])}` : null,
+      busy ? null : `Клик — обновить ${name}`,
+    ].filter(Boolean).join("\n");
+    const row = h_flex().id(`p-${id}`).flex_none().h_full().px(8).gap(12).items_center()
+      .cursor_pointer().hover((s) => s.bg(t.hover)).tooltip(tip)
+      .on_click((_e, cx) => this.refresh(cx, [id]))
+      .when(busy, (el) => el.loop("opacity", { from: 0.4, to: 1, period: 900 }))
       .child(div().text_color(t.foreground).child(name));
     if (!d) return row.child(div().text_color(t.dim).child("…"));
     const windows = d.windows ?? [];
@@ -91,14 +102,10 @@ export default class ProviderLimits extends View {
 
   render(_cx) {
     const t = theme();
-    const status = this.busy ? "обновляю…" : this.at ? `обновлено ${clock(this.at)}` : "";
     const sep = () => div().flex_none().w(1).h(12).bg(t.border);
     const providers = PROVIDERS.flatMap(([id, name], i) => (i ? [sep(), this.provider(t, id, name)] : [this.provider(t, id, name)]));
-    return h_flex().id("root").size_full().px(14).gap(16).items_center()
+    return h_flex().id("root").size_full().px(6).gap(8).items_center()
       .bg(t.chrome).border_t(1).border_color(t.border).text_size(12).line_height("16px").text_color(t.muted)
-      .children(providers)
-      .child(div().flex_1())
-      .child(div().id("refresh").flex_none().text_color(t.dim).hover((s) => s.text_color(t.foreground))
-        .tooltip("Обновить лимиты").on_click((_e, cx) => this.refresh(cx)).child(status));
+      .children(providers);
   }
 }
