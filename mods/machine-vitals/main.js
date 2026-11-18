@@ -1,11 +1,13 @@
 // This Mac at a glance: CPU over the last two minutes, memory as Activity Monitor
 // counts it (colored by memory pressure), disk and battery. One cheap shell call
-// per sample; click opens Activity Monitor.
+// per sample; click opens the monitor window (monitor.js), the same mod with props.monitor.
 import { View, div, svg } from "gpui-kit";
 import { v_flex, h_flex } from "gpui-base";
-import { exec, theme, layout, window } from "herdr";
+import { exec, theme, layout, window, props, openOverlay, checking } from "herdr";
 import { squareCorners } from "./square.js";
-import { SCRIPT, PROCS, parse, parseProcs, gb } from "./stats.js";
+import { PROCS, parseProcs, gb } from "./stats.js";
+import { store, sample } from "./history.js";
+import { Monitor } from "./monitor.js";
 
 const SAMPLES = 40; // CPU history: 40 samples, 2 minutes while the window is in front
 const EVERY = 3000; // ms between samples while the window is in front
@@ -21,37 +23,26 @@ function find(node, id) {
 const narrow = () => (find(layout(), "sidebar")?.size?.px ?? Infinity) < 160;
 
 export default class MachineVitals extends View {
-  init(_props, cx) {
+  init(given, cx) {
     squareCorners();
-    this.cpu = [];
-    this.now = null;
-    this.busy = false;
-    this.last = 0;
+    const p = { ...(given ?? {}), ...(props() ?? {}) };
+    if (p.monitor) {
+      this.monitor = new Monitor(p, cx);
+      return;
+    }
     this.procs = [];
-    this.sample(cx);
-    cx.timer.every(EVERY, (cx) => {
-      if (Date.now() - this.last >= (window().active ? EVERY : AWAY) - 100) this.sample(cx);
-    });
+    if (checking()) return;
+    this.sample(cx, 0);
+    cx.timer.every(EVERY, (cx) => this.sample(cx, window().active ? EVERY : AWAY));
   }
 
-  sample(cx) {
-    if (this.busy) return;
-    this.busy = true;
-    this.last = Date.now();
-    cx.spawn(async (cx) => {
-      try {
-        const r = await exec("sh", ["-c", SCRIPT]);
-        const s = parse(r.stdout);
-        if (s.cpu !== null) this.cpu = [...this.cpu, s.cpu].slice(-SAMPLES);
-        this.now = s;
-        this.error = null;
-      } catch (e) {
-        this.error = String(e);
-      } finally {
-        this.busy = false;
-      }
-      cx.notify();
-    });
+  // The history is shared with the monitor window: whichever asks first samples.
+  sample(cx, every) {
+    cx.spawn(async (cx) => { if (await sample(every)) cx.notify(); });
+  }
+
+  open() {
+    openOverlay({ mod: "machine-vitals", props: { monitor: true }, kind: "dialog", frame: "none", width: 880, height: 0.9 });
   }
 
   loadProcs(cx) {
@@ -61,10 +52,12 @@ export default class MachineVitals extends View {
     });
   }
 
-  render() {
+  render(cx) {
+    if (this.monitor) return this.monitor.render(cx);
     const t = theme();
-    const s = this.now;
-    const cpu = this.cpu.at(-1) ?? null;
+    const s = store.now;
+    const cpus = store.samples.slice(-SAMPLES).map((x) => x.cpu).filter((x) => x !== null);
+    const cpu = cpus.at(-1) ?? null;
     const warn = (pct, high = 85) => (pct >= 95 ? t.ansi1 : pct >= high ? t.ansi3 : t.accent);
     const memColor = !s ? t.accent : s.mem.pressure >= 4 ? t.ansi1 : s.mem.pressure >= 2 ? t.ansi3 : t.accent;
     const memPct = s?.mem.total ? (s.mem.used / s.mem.total) * 100 : 0;
@@ -77,7 +70,8 @@ export default class MachineVitals extends View {
       .bg(t.chrome)
       .text_size(12)
       .cursor_pointer()
-      .on_click(() => exec("open", ["-a", "Activity Monitor"]).catch(() => {}));
+      .tooltip("Открыть монитор")
+      .on_click(() => this.open());
 
     if (narrow()) {
       const mini = (label, pct, color) =>
@@ -101,7 +95,7 @@ export default class MachineVitals extends View {
 
     const spark = h_flex().flex_1().h(18).items_end().gap(1).children(
       Array.from({ length: SAMPLES }, (_, i) => {
-        const v = this.cpu[i - (SAMPLES - this.cpu.length)];
+        const v = cpus[i - (SAMPLES - cpus.length)];
         return div().flex_1().min_w(1).rounded(1)
           .h(v === undefined ? 1 : Math.max(1, Math.round((v / 100) * 18)))
           .bg(v === undefined ? t.border : i === SAMPLES - 1 ? warn(v) : warn(v) + "99");
@@ -122,7 +116,7 @@ export default class MachineVitals extends View {
       .child(header)
       .child(
         v_flex().px(16).pb(6).gap(1)
-          .when(Boolean(this.error) && !s, (el) => el.child(div().text_size(11).text_color(t.ansi1).truncate().child(this.error)))
+          .when(Boolean(store.error) && !s, (el) => el.child(div().text_size(11).text_color(t.ansi1).truncate().child(store.error ?? "")))
           .child(row("mv-cpu", "CPU", spark, cpu === null ? "…" : `${Math.round(cpu)}%`, cpu === null ? t.dim : warn(cpu) === t.accent ? null : warn(cpu),
             procs ? `Most CPU lately:\n${procs}` : "Most CPU lately: …", (hovered, cx) => { if (hovered) this.loadProcs(cx); }))
           .child(row("mv-mem", "Mem", bar(memPct, memColor), s ? `${gb(s.mem.used)}/${gb(s.mem.total)} GB` : "…", memColor === t.accent ? null : memColor,
